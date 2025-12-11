@@ -1,0 +1,5 @@
+{
+  "name": "AutoChat Flow MVP",
+  "description": "A complete local chatbot automation platform with visual flow builder, channel simulator, and automated engine.",
+  "requestFramePermissions": []
+}
