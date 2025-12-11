@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Layout } from './Layout';
 import { Dashboard } from './Dashboard';
@@ -8,11 +9,18 @@ import { ConnectInstagram } from './ConnectInstagram';
 import { ConnectWhatsApp } from './ConnectWhatsApp';
 import { ConnectFacebook } from './ConnectFacebook';
 import { ConnectedAccounts } from './ConnectedAccounts';
+import { AuthScreen } from './Auth';
+import { LandingPage } from './LandingPage';
+import { UpgradeModal } from './UpgradeModal';
 import { db } from '../services/db';
+import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
+import { Loader } from 'lucide-react';
 
 export default function App() {
+  const { user, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showLanding, setShowLanding] = useState(true);
 
   // Sync accounts to backend on load
   useEffect(() => {
@@ -34,8 +42,26 @@ export default function App() {
     syncAccounts();
   }, []);
 
+  if (isLoading) {
+    return <div className="h-screen w-screen bg-slate-950 flex items-center justify-center text-blue-500"><Loader className="animate-spin" size={32} /></div>;
+  }
+
+  // LOGIC: 
+  // 1. If user is logged in -> Show Dashboard (Layout)
+  // 2. If user is NOT logged in AND showLanding is true -> Show Landing Page
+  // 3. If user is NOT logged in AND showLanding is false -> Show AuthScreen
+
+  if (!user) {
+    if (showLanding) {
+        return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+    }
+    return <AuthScreen onBack={() => setShowLanding(true)} />;
+  }
+
+  // Authenticated State (Dashboard)
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
+      <UpgradeModal />
       {activeTab === 'dashboard' && <Dashboard />}
       {activeTab === 'flows' && <FlowBuilder />}
       {activeTab === 'simulator' && <Simulator />}

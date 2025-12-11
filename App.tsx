@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
@@ -11,19 +10,24 @@ import { ConnectWhatsApp } from './components/ConnectWhatsApp';
 import { ConnectFacebook } from './components/ConnectFacebook';
 import { ConnectedAccounts } from './components/ConnectedAccounts';
 import { AuthScreen } from './components/Auth';
+import { LandingPage } from './components/LandingPage';
 import { UpgradeModal } from './components/UpgradeModal';
 import { Loader } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [showLanding, setShowLanding] = useState(true);
 
   if (isLoading) {
     return <div className="h-screen w-screen bg-slate-950 flex items-center justify-center text-blue-500"><Loader className="animate-spin" size={32} /></div>;
   }
 
   if (!user) {
-    return <AuthScreen />;
+    if (showLanding) {
+      return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+    }
+    return <AuthScreen onBack={() => setShowLanding(true)} />;
   }
 
   return (

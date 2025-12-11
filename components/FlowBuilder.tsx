@@ -5,7 +5,7 @@ import { Flow, FlowNode, NodeType, TriggerType, Account, Platform } from '../typ
 import { NODE_TYPES, TRIGGER_TYPES } from '../constants';
 import { Plus, Save, Trash2, X, Lock, Sparkles, Loader, Wand2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { GoogleGenAI } from "@google/genai";
+import axios from 'axios';
 
 export const FlowBuilder: React.FC = () => {
   const [flows, setFlows] = useState<Flow[]>([]);
@@ -18,7 +18,7 @@ export const FlowBuilder: React.FC = () => {
   const [aiPrompt, setAiPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const { user, triggerUpgrade } = useAuth();
+  const { user, triggerUpgrade, refreshUsage } = useAuth();
   
   useEffect(() => {
     setFlows(db.getFlows());
@@ -118,40 +118,10 @@ export const FlowBuilder: React.FC = () => {
       setIsGenerating(true);
 
       try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          // Changed: Call Backend API instead of Client SDK
+          const response = await axios.post('/api/ai/generate-flow', { prompt: aiPrompt });
           
-          const systemPrompt = `
-            You are an expert chatbot automation architect.
-            Create a JSON array of nodes based on the user's description.
-            
-            RULES:
-            1. Return ONLY valid JSON. No markdown, no text.
-            2. Available Node Types: 'message', 'question', 'delay', 'condition', 'ai_generate'.
-            3. Structure per node: { "id": "string", "type": "string", "data": { "content"?: "string", "variable"?: "string", "delayMs"?: number, "conditionVar"?: "string", "conditionValue"?: "string" }, "nextId"?: "string", "falseNextId"?: "string" }
-            4. Layout: Calculate "position": { "x": number, "y": number } for each node. Start at x:100, y:100. Space them vertically by 150px.
-            5. Ensure nodes are logically connected via 'nextId'.
-            6. For 'condition' nodes, use 'nextId' for True and 'falseNextId' for False path.
-            
-            Example Request: "Ask for email"
-            Example Output: [
-                { "id": "n1", "type": "question", "position": {"x":100,"y":100}, "data": {"content": "What is your email?", "variable": "email"}, "nextId": "n2" },
-                { "id": "n2", "type": "message", "position": {"x":100,"y":250}, "data": {"content": "Thanks!"} }
-            ]
-          `;
-
-          const response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              contents: `User Request: ${aiPrompt}`,
-              config: {
-                  systemInstruction: systemPrompt,
-                  responseMimeType: 'application/json'
-              }
-          });
-
-          const jsonText = response.text || '[]';
-          // Clean potential markdown blocks if the model ignores instruction (rare with json mode but possible)
-          const cleanJson = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
-          const nodes = JSON.parse(cleanJson);
+          const nodes = response.data.nodes;
 
           const newFlow: Flow = {
               id: `flow_ai_${Date.now()}`,
@@ -167,10 +137,20 @@ export const FlowBuilder: React.FC = () => {
           setActiveFlowId(newFlow.id);
           setShowAiModal(false);
           setAiPrompt('');
+          
+          // Refresh usage to update progress bar
+          refreshUsage();
 
-      } catch (e) {
+      } catch (e: any) {
           console.error("AI Gen Failed", e);
-          alert("Failed to generate flow. Please try again.");
+          const msg = e.response?.data?.error || "Failed to generate flow. Please try again.";
+          
+          if (msg.includes('Upgrade') || msg.includes('limit')) {
+             triggerUpgrade(msg);
+             setShowAiModal(false);
+          } else {
+             alert(msg);
+          }
       } finally {
           setIsGenerating(false);
       }

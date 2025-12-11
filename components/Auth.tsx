@@ -1,9 +1,13 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutDashboard, Lock, Mail, Loader, AlertCircle, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Lock, Mail, Loader, AlertCircle, Sparkles, ArrowLeft } from 'lucide-react';
 
-export const AuthScreen: React.FC = () => {
+interface AuthScreenProps {
+  onBack: () => void;
+}
+
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onBack }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -67,6 +71,13 @@ export const AuthScreen: React.FC = () => {
       {/* Background decoration */}
       <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[100px]" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-purple-600/20 rounded-full blur-[100px]" />
+
+      <button 
+        onClick={onBack}
+        className="absolute top-8 left-8 text-slate-400 hover:text-white flex items-center gap-2 z-20"
+      >
+        <ArrowLeft size={20} /> Back to Home
+      </button>
 
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl relative z-10">
         <div className="text-center mb-8">

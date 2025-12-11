@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Stripe from 'stripe';
 import crypto from 'crypto';
+import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -240,6 +241,74 @@ app.post('/api/flow/execute-check', authMiddleware, (req, res) => {
     }
     incrementUsage(req.user.id);
     res.json({ status: 'ok', remaining: planConfig.limit - usage.count });
+});
+
+app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => {
+    try {
+        const { prompt } = req.body;
+        
+        // Check if API Key is configured on server
+        const apiKey = process.env.API_KEY;
+        if (!apiKey) {
+             console.error("[AI] API_KEY missing in server environment");
+             return res.status(500).json({ error: 'Server misconfiguration: API_KEY missing' });
+        }
+
+        // Check user plan
+        const planConfig = CONFIG.PLANS[req.user.plan] || CONFIG.PLANS.free;
+        if (!planConfig.ai) {
+             return res.status(403).json({ error: 'AI features require Pro or Business plan' });
+        }
+
+        // Check usage limits
+        const usage = getUsage(req.user.id);
+        if (usage.count >= planConfig.limit) {
+             return res.status(403).json({ error: 'Monthly usage limit reached' });
+        }
+
+        const ai = new GoogleGenAI({ apiKey });
+        
+        const systemPrompt = `
+            You are an expert chatbot automation architect.
+            Create a JSON array of nodes based on the user's description.
+            
+            RULES:
+            1. Return ONLY valid JSON. No markdown, no text.
+            2. Available Node Types: 'message', 'question', 'delay', 'condition', 'ai_generate'.
+            3. Structure per node: { "id": "string", "type": "string", "data": { "content"?: "string", "variable"?: "string", "delayMs"?: number, "conditionVar"?: "string", "conditionValue"?: "string" }, "nextId"?: "string", "falseNextId"?: "string" }
+            4. Layout: Calculate "position": { "x": number, "y": number } for each node. Start at x:100, y:100. Space them vertically by 150px.
+            5. Ensure nodes are logically connected via 'nextId'.
+            6. For 'condition' nodes, use 'nextId' for True and 'falseNextId' for False path.
+            
+            Example Request: "Ask for email"
+            Example Output: [
+                { "id": "n1", "type": "question", "position": {"x":100,"y":100}, "data": {"content": "What is your email?", "variable": "email"}, "nextId": "n2" },
+                { "id": "n2", "type": "message", "position": {"x":100,"y":250}, "data": {"content": "Thanks!"} }
+            ]
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `User Request: ${prompt}`,
+            config: {
+                systemInstruction: systemPrompt,
+                responseMimeType: 'application/json'
+            }
+        });
+
+        // Increment usage
+        incrementUsage(req.user.id);
+
+        const jsonText = response.text || '[]';
+        // Basic cleanup just in case
+        const cleanJson = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        res.json({ nodes: JSON.parse(cleanJson) });
+
+    } catch (e) {
+        console.error("[AI] Generation Failed:", e);
+        res.status(500).json({ error: 'AI Generation failed: ' + e.message });
+    }
 });
 
 // ==========================================
