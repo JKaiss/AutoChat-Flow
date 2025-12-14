@@ -172,37 +172,118 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2 shadow-2xl">
               <div className="bg-slate-950 rounded-xl overflow-hidden border border-slate-800 aspect-[16/9] relative flex">
                 {/* Mock Sidebar */}
-                <div className="w-64 border-r border-slate-800 bg-slate-900/50 p-4 hidden md:block">
+                <div className="w-64 border-r border-slate-800 bg-slate-900/50 p-4 hidden md:block z-20 relative">
                     <div className="flex items-center gap-2 mb-6">
                         <div className="w-8 h-8 bg-blue-500 rounded-lg"></div>
                         <div className="h-4 w-24 bg-slate-800 rounded"></div>
                     </div>
                     <div className="space-y-3">
-                        <div className="h-8 w-full bg-slate-800/50 rounded"></div>
-                        <div className="h-8 w-full bg-blue-900/20 border border-blue-900/50 rounded"></div>
-                        <div className="h-8 w-full bg-slate-800/50 rounded"></div>
+                        <div className="h-8 w-full bg-slate-800/50 rounded flex items-center px-2">
+                           <div className="w-4 h-4 rounded-sm bg-slate-700"></div>
+                           <div className="w-20 h-2 bg-slate-700 rounded ml-2"></div>
+                        </div>
+                        <div className="h-8 w-full bg-blue-900/20 border border-blue-900/50 rounded flex items-center px-2">
+                           <div className="w-4 h-4 rounded-sm bg-blue-600"></div>
+                           <div className="w-24 h-2 bg-blue-200/50 rounded ml-2"></div>
+                        </div>
+                        <div className="h-8 w-full bg-slate-800/50 rounded flex items-center px-2">
+                           <div className="w-4 h-4 rounded-sm bg-slate-700"></div>
+                           <div className="w-16 h-2 bg-slate-700 rounded ml-2"></div>
+                        </div>
+                    </div>
+                    <div className="mt-auto absolute bottom-4 left-4 right-4">
+                        <div className="h-20 w-full bg-slate-800/50 rounded-lg border border-slate-800"></div>
                     </div>
                 </div>
-                {/* Mock Canvas */}
+                
+                {/* Mock Canvas - Beautiful Flow */}
                 <div className="flex-1 p-8 relative overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950">
-                    {/* Nodes */}
-                    <div className="absolute top-20 left-1/4 bg-slate-800 border-2 border-green-500 p-4 rounded-xl w-64 shadow-lg">
-                        <div className="flex items-center gap-2 mb-2"><Instagram size={16} className="text-pink-500" /><span className="text-xs font-bold">TRIGGER: COMMENT</span></div>
-                        <div className="h-2 w-full bg-slate-700 rounded mb-1"></div>
-                        <div className="h-2 w-2/3 bg-slate-700 rounded"></div>
+                    
+                    {/* SVG Connections */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                        <defs>
+                            <linearGradient id="line-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
+                                <stop offset="100%" stopColor="#a855f7" stopOpacity="0.6" />
+                            </linearGradient>
+                        </defs>
+                        {/* Line 1: Trigger to AI */}
+                        <path d="M220 100 C 300 100, 300 180, 380 180" stroke="url(#line-gradient)" strokeWidth="3" fill="none" />
+                        {/* Line 2: AI to DM */}
+                        <path d="M600 180 C 650 180, 650 120, 700 120" stroke="url(#line-gradient)" strokeWidth="3" fill="none" />
+                        {/* Line 3: AI to Admin */}
+                        <path d="M600 180 C 650 180, 650 240, 700 240" stroke="url(#line-gradient)" strokeWidth="3" fill="none" />
+                    </svg>
+
+                    {/* Node 1: Trigger */}
+                    <div className="absolute top-[60px] left-[40px] w-[180px] z-10">
+                        <div className="bg-slate-800/90 backdrop-blur border border-pink-500/30 p-4 rounded-xl shadow-xl hover:scale-105 transition-transform cursor-default">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="p-1.5 bg-pink-500/20 rounded-lg">
+                                    <Instagram size={14} className="text-pink-500" />
+                                </div>
+                                <span className="text-[10px] font-bold text-pink-200 uppercase tracking-wide">Trigger</span>
+                            </div>
+                            <div className="text-xs font-bold text-white">Comment on Post</div>
+                            <div className="text-[10px] text-slate-400 mt-1">Keywords: "Price", "Cost"</div>
+                        </div>
                     </div>
-                    <div className="absolute top-20 left-1/4 ml-[270px] mt-[30px] w-12 h-0.5 bg-slate-600"></div>
-                    <div className="absolute top-20 left-1/2 ml-10 bg-slate-800 border border-slate-700 p-4 rounded-xl w-64 shadow-lg">
-                        <div className="flex items-center gap-2 mb-2"><MessageSquare size={16} className="text-blue-500" /><span className="text-xs font-bold">SEND DM</span></div>
-                        <div className="text-xs text-slate-400">"Hey! Here is your discount code 🚀"</div>
+
+                    {/* Node 2: AI Processing (Center Hero) */}
+                    <div className="absolute top-[130px] left-[380px] w-[220px] z-20">
+                         <div className="bg-slate-900/90 backdrop-blur border-2 border-purple-500/50 p-5 rounded-2xl shadow-2xl shadow-purple-900/20 hover:scale-105 transition-transform relative overflow-hidden group cursor-default">
+                            <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 bg-purple-500/20 rounded-lg animate-pulse">
+                                        <Sparkles size={16} className="text-purple-400" />
+                                    </div>
+                                    <span className="text-xs font-bold text-purple-200">AI Agent</span>
+                                </div>
+                                <span className="text-[10px] bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded-full border border-purple-700/50">Gemini</span>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="h-2 w-full bg-slate-700 rounded-full overflow-hidden">
+                                    <div className="h-full w-2/3 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full" />
+                                </div>
+                                <div className="text-[10px] text-slate-400 flex justify-between">
+                                    <span>Analyzing sentiment...</span>
+                                    <span className="text-green-400">Positive</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                     <div className="absolute top-64 left-1/3 bg-slate-800 border-2 border-purple-500 p-4 rounded-xl w-64 shadow-lg flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400"><Sparkles size={16} /></div>
-                         <div>
-                            <div className="text-xs font-bold text-white">AI Generated</div>
-                            <div className="text-[10px] text-slate-400">Optimized for sales</div>
-                         </div>
+
+                    {/* Node 3: Send DM */}
+                    <div className="absolute top-[70px] left-[700px] w-[200px] z-10">
+                        <div className="bg-slate-800/90 backdrop-blur border border-blue-500/30 p-4 rounded-xl shadow-xl hover:scale-105 transition-transform cursor-default">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="p-1.5 bg-blue-500/20 rounded-lg">
+                                    <MessageSquare size={14} className="text-blue-500" />
+                                </div>
+                                <span className="text-[10px] font-bold text-blue-200 uppercase tracking-wide">Action</span>
+                            </div>
+                            <div className="text-xs font-bold text-white">Send DM</div>
+                            <div className="text-[10px] text-slate-400 mt-1 bg-slate-900 p-2 rounded border border-slate-700/50">
+                                "Hey! saw you asked about the price..."
+                            </div>
+                        </div>
                     </div>
+
+                    {/* Node 4: Notify Team */}
+                    <div className="absolute top-[200px] left-[700px] w-[200px] z-10">
+                        <div className="bg-slate-800/90 backdrop-blur border border-slate-600/30 p-4 rounded-xl shadow-xl hover:scale-105 transition-transform opacity-80 cursor-default">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="p-1.5 bg-slate-700 rounded-lg">
+                                    <Bot size={14} className="text-slate-300" />
+                                </div>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Internal</span>
+                            </div>
+                            <div className="text-xs font-bold text-slate-300">Notify Sales Team</div>
+                            <div className="text-[10px] text-slate-500 mt-1">Via Slack Integration</div>
+                        </div>
+                    </div>
+
                 </div>
               </div>
             </div>
