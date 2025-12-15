@@ -14,6 +14,7 @@ import { LandingPage } from './LandingPage';
 import { UpgradeModal } from './UpgradeModal';
 import { db } from '../services/db';
 import { useAuth } from '../contexts/AuthContext';
+import { engine } from '../services/engine';
 import axios from 'axios';
 import { Loader } from 'lucide-react';
 
@@ -41,6 +42,13 @@ export default function App() {
     };
     syncAccounts();
   }, []);
+
+  // Start polling when user is active
+  useEffect(() => {
+    if (user) {
+        engine.startPolling();
+    }
+  }, [user]);
 
   if (isLoading) {
     return <div className="h-screen w-screen bg-slate-950 flex items-center justify-center text-blue-500"><Loader className="animate-spin" size={32} /></div>;

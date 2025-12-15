@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AutomationEngine } from '../services/engine';
+import { engine } from '../services/engine';
 import { ChatMessage, TriggerType, Account, Platform } from '../types';
 import { db } from '../services/db';
-import { Send, Instagram, Phone, Facebook, WifiOff, MessageSquare, AtSign, MessageCircle } from 'lucide-react';
+import { Send, Instagram, Phone, Facebook, WifiOff, MessageSquare, AtSign, MessageCircle, User, RefreshCw, Activity } from 'lucide-react';
 
 export const Simulator: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -11,9 +11,10 @@ export const Simulator: React.FC = () => {
   const [manualPayload, setManualPayload] = useState('');
   const [activeChannel, setActiveChannel] = useState<Platform>('instagram');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [testSubscriberId, setTestSubscriberId] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
   
-  const engineRef = useRef<AutomationEngine | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -28,10 +29,19 @@ export const Simulator: React.FC = () => {
         setSelectedAccountId('virtual_test_account');
     }
 
-    engineRef.current = new AutomationEngine((msg) => {
-      setMessages(prev => [...prev, msg]);
-    });
-    setMessages([{ id: 'init', sender: 'bot', text: 'Simulator Ready. Select an event type to test.', timestamp: Date.now() }]);
+    // Set default subscriber ID based on channel
+    setTestSubscriberId(`test_user_${activeChannel}`);
+
+    // Subscribe to engine messages
+    const handleMsg = (msg: ChatMessage) => {
+        setMessages(prev => [...prev, msg]);
+    };
+    engine.addListener(handleMsg);
+    setMessages([{ id: 'init', sender: 'bot', text: 'Simulator Ready. Listening for events...', timestamp: Date.now() }]);
+    
+    return () => {
+        engine.removeListener(handleMsg);
+    };
   }, []);
 
   // Update selected account when channel changes
@@ -41,6 +51,10 @@ export const Simulator: React.FC = () => {
         setSelectedAccountId(relevant[0].externalId);
     } else {
         setSelectedAccountId('virtual_test_account');
+    }
+    // Reset subscriber ID default if it still has the default pattern
+    if (testSubscriberId.startsWith('test_user_')) {
+        setTestSubscriberId(`test_user_${activeChannel}`);
     }
   }, [activeChannel, accounts]);
 
@@ -52,6 +66,7 @@ export const Simulator: React.FC = () => {
     if (!content.trim()) return;
 
     const targetAccount = selectedAccountId || 'virtual_test_account';
+    const subId = testSubscriberId || `test_user_${activeChannel}`;
     
     // Visual feedback in chat for user actions
     const userMsg: ChatMessage = {
@@ -64,9 +79,9 @@ export const Simulator: React.FC = () => {
     };
     setMessages(prev => [...prev, userMsg]);
 
-    engineRef.current?.triggerEvent(type, { 
+    engine.triggerEvent(type, { 
         text: content, 
-        subscriberId: `test_user_${activeChannel}`, 
+        subscriberId: subId, 
         username: 'test_user',
         targetAccountId: targetAccount
     });
@@ -79,6 +94,12 @@ export const Simulator: React.FC = () => {
       
       handleTrigger(trigger, inputValue);
       setInputValue('');
+  };
+
+  const handleForceSync = async () => {
+      setIsSyncing(true);
+      await engine.pollMessages();
+      setIsSyncing(false);
   };
 
   const activeAccountName = selectedAccountId === 'virtual_test_account' 
@@ -106,19 +127,50 @@ export const Simulator: React.FC = () => {
             ))}
         </div>
 
-        {/* Account Switcher */}
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-            <label className="text-xs font-bold text-slate-500 mb-2 block uppercase">Simulate Event On:</label>
-            <select 
-                value={selectedAccountId}
-                onChange={(e) => setSelectedAccountId(e.target.value)}
-                className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600 outline-none"
+        {/* Configuration */}
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-4">
+            <div>
+                <label className="text-xs font-bold text-slate-500 mb-2 block uppercase">Simulate On Account</label>
+                <select 
+                    value={selectedAccountId}
+                    onChange={(e) => setSelectedAccountId(e.target.value)}
+                    className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600 outline-none"
+                >
+                    {accounts.filter(a => a.platform === activeChannel).map(acc => (
+                        <option key={acc.id} value={acc.externalId}>{acc.name} ({acc.externalId})</option>
+                    ))}
+                    <option value="virtual_test_account">Virtual Test Account (Offline)</option>
+                </select>
+            </div>
+            
+            <div>
+                 <label className="text-xs font-bold text-slate-500 mb-2 block uppercase flex items-center gap-2">
+                    <User size={12}/> Subscriber ID
+                 </label>
+                 <input 
+                    value={testSubscriberId}
+                    onChange={(e) => setTestSubscriberId(e.target.value)}
+                    className="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600 outline-none font-mono"
+                    placeholder="e.g. 123456789 (IGSID)"
+                 />
+                 <p className="text-[10px] text-slate-500 mt-1">
+                     Enter a real Scoped User ID here to test real Graph API sending.
+                 </p>
+            </div>
+        </div>
+
+        {/* Sync Status Panel */}
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                <Activity size={14} className={isSyncing ? "text-green-500 animate-pulse" : "text-slate-500"} />
+                Background Polling
+            </div>
+            <button 
+                onClick={handleForceSync}
+                className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded font-bold flex items-center gap-1 transition-all"
             >
-                {accounts.filter(a => a.platform === activeChannel).map(acc => (
-                    <option key={acc.id} value={acc.externalId}>{acc.name} ({acc.externalId})</option>
-                ))}
-                <option value="virtual_test_account">Virtual Test Account (Offline)</option>
-            </select>
+                <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} /> Force Sync
+            </button>
         </div>
 
         {/* Manual Triggers Panel */}

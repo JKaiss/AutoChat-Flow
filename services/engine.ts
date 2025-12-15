@@ -16,14 +16,77 @@ interface AutomationEvent {
 }
 
 export class AutomationEngine {
-  private messageHandler: (msg: ChatMessage) => void;
+  private listeners: ((msg: ChatMessage) => void)[] = [];
   private ai: GoogleGenAI;
   private pausedStates = new Map<string, { flowId: string, nextNodeId: string, variable: string }>();
+  private processedIds = new Set<string>();
+  private isPolling = false;
 
-  constructor(onMessage: (msg: ChatMessage) => void) {
-    this.messageHandler = onMessage;
+  constructor() {
     const apiKey = process.env.API_KEY || ''; 
     this.ai = new GoogleGenAI({ apiKey });
+  }
+
+  // --- Listener Management ---
+  addListener(fn: (msg: ChatMessage) => void) {
+      this.listeners.push(fn);
+  }
+
+  removeListener(fn: (msg: ChatMessage) => void) {
+      this.listeners = this.listeners.filter(l => l !== fn);
+  }
+
+  private broadcast(msg: ChatMessage) {
+      this.listeners.forEach(l => l(msg));
+  }
+
+  // --- Polling Logic ---
+  startPolling() {
+      if (this.isPolling) return;
+      this.isPolling = true;
+      console.log("[Engine] Started polling service...");
+      // Poll immediately, then every 10s
+      this.pollMessages();
+      setInterval(() => this.pollMessages(), 10000);
+  }
+
+  public async pollMessages() {
+      try {
+          console.debug("[Engine] Polling messages...");
+          const res = await axios.post('/api/instagram/check-messages');
+          const messages = res.data.messages || [];
+          
+          if (messages.length > 0) {
+              console.log(`[Engine] Fetched ${messages.length} recent messages.`);
+          }
+
+          for (const msg of messages) {
+              if (!this.processedIds.has(msg.id)) {
+                  this.processedIds.add(msg.id);
+                  console.log(`[Engine] NEW MESSAGE: ${msg.text} from ${msg.sender.username}`);
+                  
+                  // Broadcast to UI (Simulator)
+                  this.broadcast({
+                      id: msg.id,
+                      sender: 'user',
+                      text: msg.text,
+                      timestamp: new Date(msg.timestamp).getTime(),
+                      channel: 'instagram',
+                      accountId: msg.accountId
+                  });
+
+                  // Trigger Automation
+                  await this.triggerEvent('instagram_dm', {
+                      text: msg.text,
+                      subscriberId: msg.sender.id,
+                      username: msg.sender.username,
+                      targetAccountId: msg.accountId
+                  });
+              }
+          }
+      } catch (e) {
+          console.warn("[Engine] Polling failed (Server might be down or not authenticated)", e);
+      }
   }
 
   // Helper to check limits against backend
@@ -218,7 +281,7 @@ export class AutomationEngine {
       channel: subscriber.channel,
       accountId 
     };
-    this.messageHandler(msg);
+    this.broadcast(msg);
 
     // Only attempt real API calls if not using virtual account
     if (accountId !== 'virtual_test_account') {
@@ -226,6 +289,9 @@ export class AutomationEngine {
             this.sendApi('whatsapp', subscriber.phoneNumber, text, accountId);
         } else if (subscriber.channel === 'facebook' && subscriber.messenger_id) {
             this.sendApi('messenger', subscriber.messenger_id, text, accountId);
+        } else if (subscriber.channel === 'instagram') {
+             // For Instagram, subscriber.id in simulation usually maps to IGSID if user entered a real one
+             this.sendApi('instagram', subscriber.id, text, accountId);
         }
     }
   }
@@ -242,3 +308,5 @@ export class AutomationEngine {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 }
+
+export const engine = new AutomationEngine();

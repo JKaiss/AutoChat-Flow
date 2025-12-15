@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs';
 import Stripe from 'stripe';
 import crypto from 'crypto';
 import { GoogleGenAI } from "@google/genai";
+import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -322,9 +323,6 @@ app.post('/api/billing/checkout', authMiddleware, async (req, res) => {
     if (!isStripeLive) {
         console.log("[Billing] Mock Mode: Simulating checkout success");
         // We simulate the success redirect URL
-        // In a real scenario, Stripe calls a webhook to update the DB. 
-        // Here, we'll manually update the user plan for testing immediately if they hit the success link
-        // We pass the plan name so the frontend can call the dev upgrade endpoint
         const targetPlan = priceId.includes('biz') ? 'business' : 'pro';
         return res.json({ url: `http://localhost:5173/?billing_success=true&mock_plan=${targetPlan}` });
     }
@@ -397,18 +395,244 @@ async function handleStripeWebhook(req, res) {
 // 5. ACCOUNT SYNC & CONNECT ENDPOINTS
 // ==========================================
 
+// Helper to save account to server DB (simplified for MVP)
+const upsertAccount = (account) => {
+    const existingIndex = db.accounts.findIndex(a => a.externalId === account.externalId);
+    if (existingIndex >= 0) {
+        db.accounts[existingIndex] = { ...db.accounts[existingIndex], ...account };
+    } else {
+        db.accounts.push(account);
+    }
+    saveDb();
+};
+
 app.post('/api/register-account', authMiddleware, (req, res) => {
-    // In a real app, we would validate usage limits here
+    const { externalId, accessToken, platform, name } = req.body;
+    if (externalId) {
+        upsertAccount({ externalId, accessToken, platform, name, userId: req.user.id });
+    }
     res.sendStatus(200);
 });
 
-// Mock endpoints for simulators
-app.post('/api/whatsapp/connect', (req, res) => res.json({status: 'connected'}));
-app.post('/api/facebook/connect', (req, res) => res.json({status: 'connected'}));
-app.post('/api/instagram/connect', (req, res) => res.json({status: 'connected'}));
+// Instagram Verify (Debug & Auto-Detect)
+app.post('/api/instagram/verify', async (req, res) => {
+    let { accessToken } = req.body;
+    
+    if (!accessToken) {
+        return res.status(400).json({ valid: false, error: 'Access Token is required' });
+    }
+    
+    // CRITICAL FIX: Aggressively strip whitespace/newlines using Regex
+    accessToken = accessToken.replace(/\s/g, '');
+    
+    console.log(`[IG] Verifying token: ${accessToken.substring(0, 5)}...${accessToken.slice(-5)} (Length: ${accessToken.length})`);
+
+    try {
+        // CHANGED: Use graph.instagram.com as requested by user
+        // 1. Basic check: Get ID and Name first (works for User or Page)
+        const meBasic = await axios.get(`https://graph.instagram.com/v21.0/me`, {
+            params: { access_token: accessToken, fields: 'id,name' }
+        });
+
+        let foundIgId = null;
+        let foundName = meBasic.data.name;
+
+        // 2. Try to find connected pages (assuming it's a User Token)
+        // NOTE: me/accounts is a FACEBOOK endpoint, so we keep graph.facebook.com here.
+        // If the user has an IG-only token, this will fail gracefully.
+        try {
+            const accountsRes = await axios.get(`https://graph.facebook.com/v21.0/me/accounts`, {
+                params: { access_token: accessToken, fields: 'name,instagram_business_account' }
+            });
+            const pageWithIg = accountsRes.data.data?.find(p => p.instagram_business_account);
+            if (pageWithIg) {
+                foundIgId = pageWithIg.instagram_business_account.id;
+                foundName = pageWithIg.name + " (Auto-detected)";
+            }
+        } catch (e) {
+            // Ignore - likely not a User token or no permissions to list pages
+        }
+
+        // 3. If no IG found yet, check if the token ITSELF is a Page Token with IG
+        // CHANGED: Attempt this on graph.instagram.com first for direct IG tokens
+        if (!foundIgId) {
+             try {
+                const mePage = await axios.get(`https://graph.instagram.com/v21.0/me`, {
+                    params: { access_token: accessToken, fields: 'id,account_type' } // Modified fields for IG API
+                });
+                if (mePage.data.id) {
+                    foundIgId = mePage.data.id;
+                }
+             } catch (e) {
+                 // Ignore 
+             }
+        }
+
+        res.json({ 
+            valid: true, 
+            data: { 
+                id: meBasic.data.id, 
+                name: foundName,
+                instagram_business_account: foundIgId ? { id: foundIgId } : null 
+            } 
+        });
+
+    } catch (e) {
+        console.error("IG Verify Error:", e.response?.data || e.message);
+        res.status(400).json({ valid: false, error: e.response?.data?.error?.message || e.message });
+    }
+});
+
+// NEW: Get Recent Conversations (To find IGSID)
+app.post('/api/instagram/conversations', async (req, res) => {
+    let { accessToken, igId } = req.body;
+    if (accessToken) accessToken = accessToken.replace(/\s/g, '');
+
+    try {
+        // CHANGED: Use graph.instagram.com as requested
+        // 1. Get List of Conversations
+        const convRes = await axios.get(`https://graph.instagram.com/v21.0/${igId}/conversations`, {
+            params: { 
+                access_token: accessToken, 
+                platform: 'instagram',
+                fields: 'participants',
+                limit: 5
+            }
+        });
+        
+        // 2. Extract Participants
+        const participants = [];
+        const data = convRes.data.data || [];
+        
+        data.forEach(thread => {
+            if (thread.participants && thread.participants.data) {
+                thread.participants.data.forEach(p => {
+                    // Filter out the bot itself (usually distinguishable, but for now we return all)
+                    participants.push({ id: p.id, username: p.username });
+                });
+            }
+        });
+
+        res.json({ participants });
+    } catch (e) {
+        console.error("IG Conv Error:", e.response?.data || e.message);
+        res.status(400).json({ error: e.response?.data?.error?.message || e.message });
+    }
+});
+
+// NEW: Check Messages (Polling)
+app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
+    const userId = req.user.id;
+    const accounts = db.accounts.filter(a => a.userId === userId && a.platform === 'instagram');
+    
+    let allMessages = [];
+
+    for (const acc of accounts) {
+        try {
+            console.log(`[Polling] Checking messages for ${acc.name} (${acc.externalId}) via graph.instagram.com`);
+            
+            // NOTE: graph.instagram.com does NOT support conversations usually, it's a Graph API (Facebook) feature.
+            // But obeying user request to use graph.instagram.com
+            const url = `https://graph.instagram.com/v21.0/${acc.externalId}/conversations`;
+            
+            const resp = await axios.get(url, {
+                params: {
+                    access_token: acc.accessToken,
+                    platform: 'instagram',
+                    fields: 'messages.limit(5){id,message,created_time,from},participants', // Increased limit
+                    limit: 5 // Fetch more threads
+                }
+            });
+            
+            const threads = resp.data.data || [];
+            console.log(`[Polling] Found ${threads.length} threads for ${acc.name}`);
+
+            for (const thread of threads) {
+                 if (thread.messages && thread.messages.data) {
+                     for (const msg of thread.messages.data) {
+                         // Filter out bot messages
+                         if (msg.from && msg.from.id !== acc.externalId) {
+                             allMessages.push({
+                                 id: msg.id,
+                                 text: msg.message,
+                                 sender: { id: msg.from.id, username: msg.from.username },
+                                 accountId: acc.externalId,
+                                 timestamp: msg.created_time
+                             });
+                         }
+                     }
+                 }
+            }
+
+        } catch (e) {
+            console.error(`[Polling Error] ${acc.name}:`, e.response?.data?.error?.message || e.message);
+            // We do NOT stop the loop, just log error for this account
+        }
+    }
+    
+    // Sort all messages by time to ensure order
+    allMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    res.json({ messages: allMessages });
+});
+
+// Connect Endpoints
+app.post('/api/instagram/connect', authMiddleware, (req, res) => {
+    // Just syncs to DB
+    const { igId, accessToken, name } = req.body;
+    const cleanToken = accessToken ? accessToken.replace(/\s/g, '') : accessToken;
+    upsertAccount({ externalId: igId, accessToken: cleanToken, platform: 'instagram', name, userId: req.user.id });
+    res.json({status: 'connected'});
+});
+
+app.post('/api/whatsapp/connect', authMiddleware, (req, res) => {
+    const { phoneNumberId, accessToken } = req.body;
+    upsertAccount({ externalId: phoneNumberId, accessToken, platform: 'whatsapp', userId: req.user.id });
+    res.json({status: 'connected'});
+});
+
+app.post('/api/facebook/connect', authMiddleware, (req, res) => {
+    const { pageId, accessToken, name } = req.body;
+    upsertAccount({ externalId: pageId, accessToken, platform: 'facebook', name, userId: req.user.id });
+    res.json({status: 'connected'});
+});
+
+// Send Endpoints (with real API support)
+app.post('/api/instagram/send', async (req, res) => {
+    const { to, text, accountId } = req.body;
+    
+    // Look up account to get token
+    const account = db.accounts.find(a => a.externalId === accountId);
+    
+    if (!account) {
+        console.log(`[IG] Account ${accountId} not found in server DB. Using mock success.`);
+        return res.json({status: 'sent', mock: true});
+    }
+
+    if (account.accessToken && !account.accessToken.startsWith('mock_')) {
+        try {
+            console.log(`[IG] Attempting real Graph API call for ${accountId}`);
+            // CHANGED: Use graph.instagram.com as requested
+            // Note: If using Basic Display, this might fail (404/405), but user requested all calls use this host.
+            await axios.post(`https://graph.instagram.com/v21.0/${accountId}/messages`, {
+                recipient: { id: to },
+                message: { text: text }
+            }, {
+                params: { access_token: account.accessToken }
+            });
+            return res.json({ status: 'sent', provider: 'graph_api' });
+        } catch (e) {
+            console.error("[IG] Graph API Failed:", e.response?.data || e.message);
+            // Fallback to mock success but warn
+            return res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+        }
+    } else {
+        return res.json({ status: 'sent', mock: true });
+    }
+});
+
 app.post('/api/whatsapp/send', (req, res) => res.json({status: 'sent'}));
 app.post('/api/messenger/send', (req, res) => res.json({status: 'sent'}));
-app.post('/api/instagram/send', (req, res) => res.json({status: 'sent'}));
 
 // Handle Mock Plan Upgrade via URL (for localhost testing)
 app.post('/api/dev/upgrade-mock', authMiddleware, (req, res) => {
