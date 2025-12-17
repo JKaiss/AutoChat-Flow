@@ -3,6 +3,13 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Copy all files from the current directory
+COPY . ./
+RUN echo "API_KEY=PLACEHOLDER" > ./.env
+RUN echo "GEMINI_API_KEY=AIzaSyBgUU0j_A1GDF4ku-UzNCTi3cu_lAtw960" >> ./.env
+RUN echo "FACEBOOK_APP_ID=1878405926098711" >> ./.env
+RUN echo "FACEBOOK_APP_SECRET=c5163d3ee03e5b51c1ffca36cf9f0f5a" >> ./.env
+
 # Copy package files and install all dependencies (including devDependencies for Vite)
 COPY package*.json ./
 RUN npm install
