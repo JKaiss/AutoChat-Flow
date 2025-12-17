@@ -186,8 +186,8 @@ app.get('/auth/facebook/callback', async (req, res) => {
 app.post('/api/register-account', authMiddleware, (req, res) => {
     const { externalId, platform, name, accessToken } = req.body;
     const idx = db.accounts.findIndex(a => a.externalId === externalId);
-    const acc = { externalId, platform, name, accessToken, userId: req.user.id };
-    if (idx >= 0) db.accounts[idx] = acc;
+    const acc = { externalId, platform, name, accessToken, userId: req.user.id, status: 'active' };
+    if (idx >= 0) db.accounts[idx] = { ...db.accounts[idx], ...acc };
     else db.accounts.push(acc);
     saveDb();
     res.sendStatus(200);
@@ -207,7 +207,6 @@ async function getSenderProfile(senderId, accessToken, platform) {
             picture: res.data.profile_pic || null
         };
     } catch (e) {
-        console.warn(`Profile fetch failed for ${senderId}`, e.message);
         return { id: senderId, username: 'User', picture: null };
     }
 }
@@ -215,10 +214,10 @@ async function getSenderProfile(senderId, accessToken, platform) {
 app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
     const userAccounts = db.accounts.filter(a => a.userId === req.user.id && a.platform === 'instagram');
     const allMessages = [];
+    let dbUpdated = false;
 
     for (const acc of userAccounts) {
         try {
-            // Polling Meta Graph API for conversations with PARTICIPANTS
             const convRes = await axios.get(`https://graph.facebook.com/v21.0/me/conversations`, {
                 params: { 
                     access_token: acc.accessToken, 
@@ -227,9 +226,16 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
                 }
             });
 
+            // If we're here, the account is healthy
+            if (acc.status !== 'active') {
+                acc.status = 'active';
+                acc.lastError = undefined;
+                dbUpdated = true;
+            }
+            acc.lastChecked = Date.now();
+
             const conversations = convRes.data.data || [];
             for (const conv of conversations) {
-                // SENDER ID FETCH LOGIC: Identify the user among participants
                 const otherParticipant = conv.participants?.data?.find(p => p.id !== acc.externalId);
                 const lastMsg = conv.messages?.data?.[0];
                 
@@ -246,8 +252,22 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
             }
         } catch (e) {
             console.error(`Polling failed for ${acc.name}`, e.response?.data || e.message);
+            const errData = e.response?.data?.error;
+            
+            // Mark account as error and store message
+            acc.status = 'error';
+            acc.lastChecked = Date.now();
+            
+            if (errData?.error_subcode === 2207085) {
+                acc.lastError = "Messaging disabled. Enable 'Allow Access to Messages' in Instagram App settings.";
+            } else {
+                acc.lastError = errData?.message || e.message;
+            }
+            dbUpdated = true;
         }
     }
+    
+    if (dbUpdated) saveDb();
     res.json({ messages: allMessages });
 });
 
@@ -264,10 +284,6 @@ app.post('/api/flow/execute-check', authMiddleware, (req, res) => {
     res.sendStatus(200);
 });
 
-/**
- * UPDATED UNIFIED SEND LOGIC
- * Solves 500 errors by using correct Graph API URL params and payloads
- */
 const handleSend = async (req, res, platform) => {
     const { to, text, accountId } = req.body;
     const account = db.accounts.find(a => a.externalId === accountId);
@@ -277,14 +293,9 @@ const handleSend = async (req, res, platform) => {
         let url = '';
         let body = {};
         
-        // For FB/IG, we use /me/messages on the page endpoint with the token as a param
         if (platform === 'facebook' || platform === 'instagram') {
             url = `https://graph.facebook.com/v21.0/me/messages?access_token=${account.accessToken}`;
-            body = { 
-                recipient: { id: to }, 
-                message: { text },
-                messaging_type: "RESPONSE" // Important for IG/FB policy
-            };
+            body = { recipient: { id: to }, message: { text }, messaging_type: "RESPONSE" };
         } else if (platform === 'whatsapp') {
             url = `https://graph.facebook.com/v21.0/${account.externalId}/messages?access_token=${account.accessToken}`;
             body = { messaging_product: "whatsapp", to, text: { body: text } };

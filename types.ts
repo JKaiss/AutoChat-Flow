@@ -60,7 +60,7 @@ export interface Subscriber {
   phoneNumber?: string; 
   instagram_id?: string;
   messenger_id?: string; 
-  profilePictureUrl?: string; // New: Supports enriched profile data
+  profilePictureUrl?: string;
   data: Record<string, any>; 
   lastInteraction: number;
 }
@@ -74,6 +74,8 @@ export interface Account {
   connectedAt: number;
   profilePictureUrl?: string;
   status: 'active' | 'error';
+  lastError?: string; // New: Stores the last API error message
+  lastChecked?: number; // New: Timestamp of last successful/failed check
   businessAccountId?: string; 
   pageId?: string; 
 }
