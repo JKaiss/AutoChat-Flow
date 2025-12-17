@@ -83,12 +83,12 @@ export class AutomationEngine {
                       accountId: msg.accountId
                   });
 
-                  // Trigger Automation Logic with ENRICHED SENDER PROFILE
+                  // Trigger Automation Logic
                   await this.triggerEvent('instagram_dm', {
                       text: msg.text, 
                       subscriberId: msg.sender.id, 
                       username: msg.sender.username, 
-                      profilePic: msg.sender.picture, // Enriched profile pic from Meta
+                      profilePic: msg.sender.picture,
                       targetAccountId: msg.accountId
                   });
               }
@@ -138,7 +138,6 @@ export class AutomationEngine {
           lastInteraction: Date.now() 
       };
     } else {
-        // ENRICHMENT: Update name and picture whenever we see them again
         subscriber.username = rawPayload.username;
         subscriber.profilePictureUrl = rawPayload.profilePic || subscriber.profilePictureUrl;
         subscriber.lastInteraction = Date.now();
