@@ -33,21 +33,22 @@ export const ConnectInstagram: React.FC = () => {
     if (code && state === 'instagram' && !authProcessed.current) {
         authProcessed.current = true;
         setIsConnecting(true);
-        setStatusMsg("Fetching linked Instagram accounts...");
+        setStatusMsg("Exchanging code for access tokens...");
         
         axios.get(`/auth/facebook/callback`, { params: { code, state } })
             .then(res => {
-                // We filter pages that have an instagram_business_account
                 const pagesWithIg = (res.data.pages || []).filter((p: any) => p.instagram_business_account);
                 if (pagesWithIg.length > 0) {
                     setAvailablePages(pagesWithIg);
-                    setStatusMsg(`Found ${pagesWithIg.length} Instagram accounts.`);
+                    setStatusMsg(`Found ${pagesWithIg.length} Instagram Business accounts.`);
                 } else {
-                    setStatusMsg("No linked Instagram Business accounts found on these pages.");
+                    setStatusMsg("No Instagram Business accounts found on your linked Facebook Pages.");
+                    console.warn("Meta Callback Success but no IG accounts found in:", res.data.pages);
                 }
                 window.history.replaceState({}, document.title, window.location.pathname);
             })
             .catch(err => {
+                console.error("Meta Callback Error", err);
                 setStatusMsg("Failed to fetch accounts: " + (err.response?.data?.error || err.message));
             })
             .finally(() => setIsConnecting(false));
@@ -55,7 +56,7 @@ export const ConnectInstagram: React.FC = () => {
   };
 
   const startOAuth = () => {
-    setStatusMsg("Redirecting to Facebook...");
+    setStatusMsg("Redirecting to Facebook for secure login...");
     window.location.href = '/auth/facebook/login?flow=instagram';
   };
 
@@ -66,7 +67,7 @@ export const ConnectInstagram: React.FC = () => {
             externalId: igAccount.id,
             platform: 'instagram',
             name: `${page.name} (IG)`,
-            accessToken: page.access_token // Page token is used for IG Graph API
+            accessToken: page.access_token 
         });
         
         const newAcc: Account = {
@@ -84,7 +85,7 @@ export const ConnectInstagram: React.FC = () => {
         setAvailablePages(prev => prev.filter(p => p.id !== page.id));
         setStatusMsg(`Connected ${page.name} Instagram!`);
     } catch (e) {
-        setStatusMsg("Failed to connect Instagram account.");
+        setStatusMsg("Failed to register account with the automation engine.");
     }
   };
 
@@ -116,7 +117,7 @@ export const ConnectInstagram: React.FC = () => {
         <h2 className="text-2xl font-bold text-white flex items-center gap-3">
           <Instagram className="text-pink-500" /> Instagram Business
         </h2>
-        <p className="text-slate-400 mt-2">Connect your Instagram Business accounts (via Facebook Pages) to start automating.</p>
+        <p className="text-slate-400 mt-2">Connect your Instagram accounts via your Facebook Pages to start automating DMs and comments.</p>
       </header>
 
       {!isConfigured && (
@@ -127,7 +128,7 @@ export const ConnectInstagram: React.FC = () => {
           <div className="flex-1 text-center md:text-left">
             <h3 className="text-amber-200 font-bold text-lg">Meta API Not Configured</h3>
             <p className="text-amber-200/70 text-sm mt-1">
-              You need to provide your Facebook App ID and Secret in <b>Settings</b> to connect real accounts.
+              Real Instagram connections require Meta App ID and Secret in <b>Settings</b>.
             </p>
           </div>
           <button 
@@ -148,13 +149,19 @@ export const ConnectInstagram: React.FC = () => {
           {isConnecting ? (
               <div className="flex-1 flex flex-col items-center justify-center py-10 gap-4">
                   <Loader className="animate-spin text-pink-500" size={32} />
-                  <span className="text-sm font-medium text-slate-400">Loading your accounts...</span>
+                  <div className="text-center">
+                    <span className="text-sm font-medium text-slate-400 block">Exchanging tokens...</span>
+                    <span className="text-[10px] text-slate-500">Communicating with Meta Graph API</span>
+                  </div>
               </div>
           ) : availablePages.length > 0 ? (
               <div className="space-y-3">
-                  <p className="text-xs font-bold text-slate-500 uppercase mb-2">Available IG Accounts:</p>
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-xs font-bold text-slate-500 uppercase">Select Instagram Account:</p>
+                    <button onClick={() => setAvailablePages([])} className="text-[10px] text-slate-400 underline">Cancel</button>
+                  </div>
                   {availablePages.map(page => (
-                      <div key={page.id} className="bg-slate-900 border border-slate-700 p-3 rounded-xl flex items-center justify-between">
+                      <div key={page.id} className="bg-slate-900 border border-slate-700 p-3 rounded-xl flex items-center justify-between group hover:border-pink-500/50 transition-all">
                           <div className="flex items-center gap-3">
                               {page.picture?.data?.url ? (
                                   <img src={page.picture.data.url} className="w-8 h-8 rounded-full border border-slate-700" />
@@ -165,13 +172,12 @@ export const ConnectInstagram: React.FC = () => {
                           </div>
                           <button 
                             onClick={() => connectInstagram(page)}
-                            className="bg-pink-600 hover:bg-pink-500 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase transition-all"
+                            className="bg-pink-600 hover:bg-pink-500 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase transition-all shadow-lg shadow-pink-900/10"
                           >
                             Connect
                           </button>
                       </div>
                   ))}
-                  <button onClick={() => setAvailablePages([])} className="w-full text-xs text-slate-500 mt-4 underline">Clear list</button>
               </div>
           ) : (
               <>
@@ -180,22 +186,22 @@ export const ConnectInstagram: React.FC = () => {
                     disabled={!isConfigured}
                     className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-all ${
                       isConfigured 
-                      ? 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white shadow-lg shadow-pink-900/20' 
+                      ? 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white shadow-lg shadow-pink-900/20 active:scale-95' 
                       : 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-50'
                     }`}
                   >
                     <Instagram size={20} /> Login with Facebook
                   </button>
                   <p className="text-[10px] text-slate-500 mt-4 text-center leading-relaxed">
-                      By clicking, you will be redirected to Meta to authorize account access.
+                      You'll be asked to select the Facebook Pages linked to your Instagram Business accounts.
                   </p>
               </>
           )}
 
           {statusMsg && (
-              <div className="mt-6 p-3 bg-slate-900 rounded-lg border border-slate-700 text-xs text-slate-400 flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse"></div>
-                  {statusMsg}
+              <div className="mt-6 p-3 bg-slate-900 rounded-lg border border-slate-700 text-xs text-slate-400 flex items-center gap-2 animate-in fade-in zoom-in-95">
+                  <div className="w-1.5 h-1.5 rounded-full bg-pink-500 animate-pulse shrink-0"></div>
+                  <span className="truncate">{statusMsg}</span>
               </div>
           )}
         </div>
@@ -204,13 +210,13 @@ export const ConnectInstagram: React.FC = () => {
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Connected Accounts</h3>
           {accounts.length === 0 && (
             <div className="p-12 border-2 border-dashed border-slate-800 rounded-2xl text-center text-slate-600 text-sm">
-              No Instagram accounts connected.
+              No accounts linked. Start by logging in with Facebook.
             </div>
           )}
           {accounts.map(acc => (
             <div key={acc.id} className="bg-slate-800 border border-slate-700 p-5 rounded-2xl flex items-center justify-between group hover:border-pink-500/30 transition-all">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-gradient-to-tr from-pink-500 to-purple-500 rounded-full flex items-center justify-center font-bold text-white border-2 border-slate-700 overflow-hidden">
+                <div className="w-12 h-12 bg-gradient-to-tr from-pink-500 to-purple-500 rounded-full flex items-center justify-center font-bold text-white border-2 border-slate-700 overflow-hidden shrink-0">
                   {acc.profilePictureUrl ? <img src={acc.profilePictureUrl} className="w-full h-full object-cover" /> : acc.name.charAt(0)}
                 </div>
                 <div>
@@ -232,12 +238,12 @@ export const ConnectInstagram: React.FC = () => {
           
           <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 mt-8">
               <h4 className="text-xs font-bold text-slate-400 uppercase mb-4 flex items-center gap-2">
-                  <HelpCircle size={14} /> Quick Guide
+                  <HelpCircle size={14} /> Connection Guide
               </h4>
               <ul className="text-[11px] text-slate-500 space-y-3 list-disc pl-4">
-                  <li>Your Instagram account must be a <b>Business</b> or <b>Creator</b> account.</li>
-                  <li>It must be <b>linked to a Facebook Page</b> that you manage.</li>
-                  <li>Ensure "Allow Access to Messages" is enabled in Instagram App Settings.</li>
+                  <li>Your Instagram must be a <b>Business Account</b> (Personal accounts won't show up).</li>
+                  <li>Ensure "Allow Access to Messages" is ON in your IG mobile app settings.</li>
+                  <li>Linked Facebook Pages must be managed by your Meta account.</li>
               </ul>
           </div>
         </div>

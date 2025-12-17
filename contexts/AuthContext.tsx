@@ -2,8 +2,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { User, UsageStats, AuthContextType } from '../types';
+import { engine } from '../services/engine';
 
-// Use relative path so Vite proxy handles the connection to backend
 const API_URL = '/api';
 
 const DEFAULT_USAGE: UsageStats = {
@@ -21,15 +21,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [usage, setUsage] = useState<UsageStats>(DEFAULT_USAGE);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Triggers the Upgrade Modal
-  const [upgradeReason, setUpgradeReason] = useState<string | null>(null);
 
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      engine.setToken(token); // Update engine with new token
       refreshUsage();
     } else {
+      engine.setToken(null);
       setIsLoading(false);
     }
   }, [token]);
@@ -40,18 +39,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(res.data.user);
       setUsage(res.data.usage);
     } catch (e: any) {
-      // HANDLE AUTH ERRORS RESILIENTLY
       if (e.response && e.response.status === 401) {
-          // Token is invalid/expired -> Logout
           logout();
       } else {
-          // 500 or Network Error -> OFFLINE MODE
-          // Don't logout the user if the server just crashed temporarily.
-          // Keep the token, but maybe flag UI as "Offline" (not implemented in MVP UI yet, but prevents lockout)
           console.warn("Backend Unreachable or Error, entering Offline Mode for UI");
-          // If we have a token but no user object, restore from local if possible, or Mock it to keep UI alive
           if (!user && token) {
-             // Mock User to allow access to UI
              setUser({ id: 'offline_user', email: 'offline@user.com', plan: 'free', createdAt: Date.now() });
           }
       }
@@ -79,6 +71,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     localStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
+    engine.setToken(null);
   };
 
   const triggerUpgrade = (reason?: string) => {

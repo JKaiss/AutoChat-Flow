@@ -207,6 +207,7 @@ async function getSenderProfile(senderId, accessToken, platform) {
             picture: res.data.profile_pic || null
         };
     } catch (e) {
+        console.warn(`Profile fetch failed for ${senderId}`, e.message);
         return { id: senderId, username: 'User', picture: null };
     }
 }
@@ -217,17 +218,23 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
 
     for (const acc of userAccounts) {
         try {
-            // Polling Meta Graph API for conversations
+            // Polling Meta Graph API for conversations with PARTICIPANTS
             const convRes = await axios.get(`https://graph.facebook.com/v21.0/me/conversations`, {
-                params: { access_token: acc.accessToken, fields: 'messages{message,from,created_time},unread_count', platform: 'instagram' }
+                params: { 
+                    access_token: acc.accessToken, 
+                    fields: 'participants,messages{message,from,created_time},unread_count', 
+                    platform: 'instagram' 
+                }
             });
 
             const conversations = convRes.data.data || [];
             for (const conv of conversations) {
+                // SENDER ID FETCH LOGIC: Identify the user among participants
+                const otherParticipant = conv.participants?.data?.find(p => p.id !== acc.externalId);
                 const lastMsg = conv.messages?.data?.[0];
-                // Only process if unread or very recent
-                if (lastMsg && lastMsg.from.id !== acc.externalId) {
-                    const profile = await getSenderProfile(lastMsg.from.id, acc.accessToken, 'instagram');
+                
+                if (lastMsg && otherParticipant && lastMsg.from.id !== acc.externalId) {
+                    const profile = await getSenderProfile(otherParticipant.id, acc.accessToken, 'instagram');
                     allMessages.push({
                         id: lastMsg.id,
                         text: lastMsg.message,
@@ -238,7 +245,7 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
                 }
             }
         } catch (e) {
-            console.error(`Polling failed for ${acc.name}`, e.message);
+            console.error(`Polling failed for ${acc.name}`, e.response?.data || e.message);
         }
     }
     res.json({ messages: allMessages });
@@ -257,7 +264,10 @@ app.post('/api/flow/execute-check', authMiddleware, (req, res) => {
     res.sendStatus(200);
 });
 
-// Unified send endpoint
+/**
+ * UPDATED UNIFIED SEND LOGIC
+ * Solves 500 errors by using correct Graph API URL params and payloads
+ */
 const handleSend = async (req, res, platform) => {
     const { to, text, accountId } = req.body;
     const account = db.accounts.find(a => a.externalId === accountId);
@@ -267,24 +277,30 @@ const handleSend = async (req, res, platform) => {
         let url = '';
         let body = {};
         
+        // For FB/IG, we use /me/messages on the page endpoint with the token as a param
         if (platform === 'facebook' || platform === 'instagram') {
-            url = `https://graph.facebook.com/v21.0/me/messages`;
-            body = { recipient: { id: to }, message: { text }, access_token: account.accessToken };
+            url = `https://graph.facebook.com/v21.0/me/messages?access_token=${account.accessToken}`;
+            body = { 
+                recipient: { id: to }, 
+                message: { text },
+                messaging_type: "RESPONSE" // Important for IG/FB policy
+            };
         } else if (platform === 'whatsapp') {
-            url = `https://graph.facebook.com/v21.0/${account.externalId}/messages`;
-            body = { messaging_product: "whatsapp", to, text: { body: text }, access_token: account.accessToken };
+            url = `https://graph.facebook.com/v21.0/${account.externalId}/messages?access_token=${account.accessToken}`;
+            body = { messaging_product: "whatsapp", to, text: { body: text } };
         }
         
-        await axios.post(url, body);
-        res.json({ success: true });
+        const graphRes = await axios.post(url, body);
+        res.json({ success: true, message_id: graphRes.data.message_id });
     } catch (e) {
-        console.error(`${platform} send error`, e.response?.data || e.message);
-        res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+        console.error(`${platform} send error detail:`, e.response?.data || e.message);
+        const metaError = e.response?.data?.error?.message || e.message;
+        res.status(500).json({ error: metaError });
     }
 };
 
 app.post('/api/facebook/send', authMiddleware, (req, res) => handleSend(req, res, 'facebook'));
-app.post('/api/messenger/send', authMiddleware, (req, res) => handleSend(req, res, 'facebook')); // Alias for legacy
+app.post('/api/messenger/send', authMiddleware, (req, res) => handleSend(req, res, 'facebook'));
 app.post('/api/instagram/send', authMiddleware, (req, res) => handleSend(req, res, 'instagram'));
 app.post('/api/whatsapp/send', authMiddleware, (req, res) => handleSend(req, res, 'whatsapp'));
 

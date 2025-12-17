@@ -60,6 +60,7 @@ export interface Subscriber {
   phoneNumber?: string; 
   instagram_id?: string;
   messenger_id?: string; 
+  profilePictureUrl?: string; // New: Supports enriched profile data
   data: Record<string, any>; 
   lastInteraction: number;
 }

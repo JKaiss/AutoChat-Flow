@@ -4,22 +4,12 @@ import { Flow, Subscriber, FlowNode, ChatMessage, TriggerType, Platform } from "
 import { GoogleGenAI } from "@google/genai";
 import axios from 'axios';
 
-interface AutomationEvent {
-  type: TriggerType;
-  subscriberId: string;
-  username: string;
-  targetAccountId: string; 
-  payload: {
-    text?: string;
-    mediaId?: string;
-  };
-}
-
 export class AutomationEngine {
   private listeners: ((msg: ChatMessage) => void)[] = [];
   private ai: GoogleGenAI;
   private pausedStates = new Map<string, { flowId: string, nextNodeId: string, variable: string }>();
   private processedIds = new Set<string>();
+  private authToken: string | null = null;
   public isPolling = false;
   private intervalId: any = null;
 
@@ -28,6 +18,17 @@ export class AutomationEngine {
     if (typeof window !== 'undefined') {
         (window as any).automationEngine = this;
     }
+  }
+
+  /**
+   * Updates the authentication token used for polling the backend.
+   */
+  setToken(token: string | null) {
+      this.authToken = token;
+      // If we just got a token and polling should be active, trigger an immediate check
+      if (token && this.isPolling) {
+          this.pollMessages();
+      }
   }
 
   addListener(fn: (msg: ChatMessage) => void) { this.listeners.push(fn); }
@@ -40,7 +41,7 @@ export class AutomationEngine {
       this.isPolling = true;
       this.broadcastStatus();
       this.pollMessages();
-      this.intervalId = setInterval(() => this.pollMessages(), 5000);
+      this.intervalId = setInterval(() => this.pollMessages(), 8000); // Polling every 8 seconds
   }
 
   stopPolling() {
@@ -57,12 +58,22 @@ export class AutomationEngine {
   }
 
   public async pollMessages() {
+      if (!this.authToken) {
+          console.debug("[Engine] Polling skipped: No auth token.");
+          return;
+      }
+
       try {
-          const res = await axios.post('/api/instagram/check-messages');
+          const res = await axios.post('/api/instagram/check-messages', {}, {
+              headers: { Authorization: `Bearer ${this.authToken}` }
+          });
+          
           const messages = res.data.messages || [];
           for (const msg of messages) {
               if (!this.processedIds.has(msg.id)) {
                   this.processedIds.add(msg.id);
+                  
+                  // Broadcast to UI (Simulator)
                   this.broadcast({
                       id: msg.id, 
                       sender: 'user', 
@@ -71,24 +82,34 @@ export class AutomationEngine {
                       channel: 'instagram', 
                       accountId: msg.accountId
                   });
+
+                  // Trigger Automation Logic with ENRICHED SENDER PROFILE
                   await this.triggerEvent('instagram_dm', {
                       text: msg.text, 
                       subscriberId: msg.sender.id, 
                       username: msg.sender.username, 
+                      profilePic: msg.sender.picture, // Enriched profile pic from Meta
                       targetAccountId: msg.accountId
                   });
               }
           }
-      } catch (e) {
-          console.warn("Polling cycle error", e.message);
+      } catch (e: any) {
+          if (e.response?.status === 401) {
+              console.warn("[Engine] Polling unauthorized. Waiting for new token.");
+          } else {
+              console.warn("[Engine] Polling cycle error:", e.message);
+          }
       } finally {
           if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('engine-heartbeat'));
       }
   }
 
   private async checkLimits(usesAI: boolean): Promise<boolean> {
+      if (!this.authToken) return false;
       try {
-          await axios.post('/api/flow/execute-check', { usesAI });
+          await axios.post('/api/flow/execute-check', { usesAI }, {
+              headers: { Authorization: `Bearer ${this.authToken}` }
+          });
           return true;
       } catch (e: any) {
           if (!e.response || e.response.status >= 500) return true;
@@ -100,15 +121,29 @@ export class AutomationEngine {
       }
   }
 
-  async triggerEvent(type: TriggerType, rawPayload: { text?: string, subscriberId: string, username: string, targetAccountId: string }) {
+  async triggerEvent(type: TriggerType, rawPayload: { text?: string, subscriberId: string, username: string, profilePic?: string, targetAccountId: string }) {
     if (!(await this.checkLimits(false))) return;
 
     let channel: Platform = type.startsWith('whatsapp') ? 'whatsapp' : type.startsWith('messenger') ? 'facebook' : 'instagram';
+    
+    // FETCH SENDER ID LOGIC: Always update or create subscriber with real Meta data
     let subscriber = db.getSubscribers().find(s => s.id === rawPayload.subscriberId);
     if (!subscriber) {
-      subscriber = { id: rawPayload.subscriberId, username: rawPayload.username, channel, data: {}, lastInteraction: Date.now() };
-      db.saveSubscriber(subscriber);
+      subscriber = { 
+          id: rawPayload.subscriberId, 
+          username: rawPayload.username, 
+          channel, 
+          data: {}, 
+          profilePictureUrl: rawPayload.profilePic,
+          lastInteraction: Date.now() 
+      };
+    } else {
+        // ENRICHMENT: Update name and picture whenever we see them again
+        subscriber.username = rawPayload.username;
+        subscriber.profilePictureUrl = rawPayload.profilePic || subscriber.profilePictureUrl;
+        subscriber.lastInteraction = Date.now();
     }
+    db.saveSubscriber(subscriber);
 
     const pausedState = this.pausedStates.get(subscriber.id);
     if (pausedState && rawPayload.text) {
@@ -185,8 +220,12 @@ export class AutomationEngine {
   private sendBotMessage(text: string, subscriber: Subscriber, accountId: string) {
     const msg: ChatMessage = { id: crypto.randomUUID(), sender: 'bot', text, timestamp: Date.now(), channel: subscriber.channel, accountId };
     this.broadcast(msg);
-    if (accountId !== 'virtual_test_account') {
-        axios.post(`/api/${subscriber.channel}/send`, { to: subscriber.id, text, accountId }).catch(() => {});
+    if (accountId !== 'virtual_test_account' && this.authToken) {
+        axios.post(`/api/${subscriber.channel}/send`, { to: subscriber.id, text, accountId }, {
+            headers: { Authorization: `Bearer ${this.authToken}` }
+        }).catch((err) => {
+            console.error("[Engine] Message send failed:", err.message);
+        });
     }
   }
 }
