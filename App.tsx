@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
@@ -9,6 +10,7 @@ import { ConnectInstagram } from './components/ConnectInstagram';
 import { ConnectWhatsApp } from './components/ConnectWhatsApp';
 import { ConnectFacebook } from './components/ConnectFacebook';
 import { ConnectedAccounts } from './components/ConnectedAccounts';
+import { Settings } from './components/Settings';
 import { AuthScreen } from './components/Auth';
 import { LandingPage } from './components/LandingPage';
 import { UpgradeModal } from './components/UpgradeModal';
@@ -22,13 +24,11 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showLanding, setShowLanding] = useState(true);
 
-  // Sync accounts to backend on load
   useEffect(() => {
     const syncAccounts = async () => {
         const accounts = db.getAllAccounts();
         for (const acc of accounts) {
             try {
-                // Register account with backend so it can handle webhooks/messaging
                 await axios.post('/api/register-account', {
                     externalId: acc.externalId,
                     accessToken: acc.accessToken,
@@ -45,7 +45,6 @@ const AppContent: React.FC = () => {
     }
   }, [user]);
 
-  // Start polling when user is active.
   useEffect(() => {
     if (user?.id) {
         engine.startPolling();
@@ -76,6 +75,7 @@ const AppContent: React.FC = () => {
       {activeTab === 'connect-ig' && <ConnectInstagram />}
       {activeTab === 'connect-wa' && <ConnectWhatsApp />}
       {activeTab === 'connect-fb' && <ConnectFacebook />}
+      {activeTab === 'settings' && <Settings />}
     </Layout>
   );
 }

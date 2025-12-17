@@ -1,6 +1,6 @@
 
 import React, { useEffect } from 'react';
-import { LayoutDashboard, GitGraph, MessageSquare, Activity, Instagram, Phone, Facebook, Link2, LogOut, CreditCard } from 'lucide-react';
+import { LayoutDashboard, GitGraph, MessageSquare, Activity, Instagram, Phone, Facebook, Link2, LogOut, CreditCard, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { UsageBar } from './UsageBar';
 import axios from 'axios';
@@ -14,24 +14,18 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange }) => {
   const { user, logout, triggerUpgrade, refreshUsage } = useAuth();
 
-  // Handle Mock Billing Success Param
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('billing_success') === 'true') {
         const mockPlan = params.get('mock_plan');
         if (mockPlan) {
-            // Call dev endpoint to set plan if it's a mock upgrade
-            console.log("Mock upgrade triggered for plan:", mockPlan);
-            // FIXED: Use relative path
             axios.post('/api/dev/upgrade-mock', { plan: mockPlan })
                  .then(() => {
                      refreshUsage();
-                     // Clean URL
                      window.history.replaceState({}, document.title, window.location.pathname);
                  })
                  .catch(err => console.error("Failed to apply mock upgrade", err));
         } else {
-             // Real Stripe success usually handled via webhook, but we refresh just in case
              refreshUsage();
              window.history.replaceState({}, document.title, window.location.pathname);
         }
@@ -71,7 +65,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
           </div>
         </div>
         
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -103,12 +97,23 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
               <span className="font-medium">{item.label}</span>
             </button>
           ))}
+
+          <div className="pt-6 pb-2 px-4 text-xs font-bold text-slate-500 uppercase">System</div>
+          <button
+            onClick={() => onTabChange('settings')}
+            className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-colors text-sm ${
+              activeTab === 'settings' 
+                ? 'bg-slate-700 text-white' 
+                : 'text-slate-400 hover:bg-slate-700 hover:text-white'
+            }`}
+          >
+            <Settings size={18} />
+            <span className="font-medium">Settings</span>
+          </button>
         </nav>
         
-        {/* Usage Bar */}
         <UsageBar />
 
-        {/* User Footer */}
         <div className="p-4 border-t border-slate-700 bg-slate-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
@@ -129,7 +134,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 overflow-hidden relative bg-slate-900">
         {children}
       </div>

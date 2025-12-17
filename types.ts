@@ -97,7 +97,10 @@ export interface ExecutionLog {
   output?: string;
 }
 
-// --- NEW AUTH & BILLING TYPES ---
+export interface AppSettings {
+  metaAppId?: string;
+  metaAppSecret?: string;
+}
 
 export interface User {
   id: string;
