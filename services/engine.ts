@@ -20,11 +20,19 @@ export class AutomationEngine {
   private ai: GoogleGenAI;
   private pausedStates = new Map<string, { flowId: string, nextNodeId: string, variable: string }>();
   private processedIds = new Set<string>();
-  private isPolling = false;
+  
+  // Interval tracking
+  private intervalId: any = null;
+  public isPolling = false;
 
   constructor() {
     const apiKey = process.env.API_KEY || ''; 
     this.ai = new GoogleGenAI({ apiKey });
+    
+    // Expose to window for debugging
+    if (typeof window !== 'undefined') {
+        (window as any).automationEngine = this;
+    }
   }
 
   // --- Listener Management ---
@@ -42,28 +50,64 @@ export class AutomationEngine {
 
   // --- Polling Logic ---
   startPolling() {
-      if (this.isPolling) return;
+      // If we are already polling AND have a valid interval, do nothing (idempotent)
+      if (this.isPolling && this.intervalId) {
+          console.log("[Engine] Already polling.");
+          this.broadcastStatus();
+          return;
+      }
+
+      // If we have an interval but state is weird, clear it
+      if (this.intervalId) {
+          clearInterval(this.intervalId);
+      }
+
+      console.warn("[Engine] 🟢 Starting Auto-Polling Service (5s interval)...");
       this.isPolling = true;
-      console.log("[Engine] Started polling service...");
-      // Poll immediately, then every 10s
+      this.broadcastStatus(); // Notify UI immediately
+
+      // Poll immediately
       this.pollMessages();
-      setInterval(() => this.pollMessages(), 10000);
+
+      // Set interval
+      this.intervalId = setInterval(() => {
+          this.pollMessages();
+      }, 5000);
+  }
+
+  stopPolling() {
+      if (this.intervalId) {
+          console.warn("[Engine] 🔴 Stopping Auto-Polling...");
+          clearInterval(this.intervalId);
+          this.intervalId = null;
+      }
+      this.isPolling = false;
+      this.broadcastStatus(); // Notify UI immediately
+  }
+
+  private broadcastStatus() {
+      if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('engine-status-change', { 
+              detail: { isPolling: this.isPolling } 
+          }));
+      }
   }
 
   public async pollMessages() {
       try {
-          console.debug("[Engine] Polling messages...");
           const res = await axios.post('/api/instagram/check-messages');
           const messages = res.data.messages || [];
           
           if (messages.length > 0) {
-              console.log(`[Engine] Fetched ${messages.length} recent messages.`);
+             console.log(`[Engine] Server returned ${messages.length} messages`);
           }
 
+          let newCount = 0;
           for (const msg of messages) {
               if (!this.processedIds.has(msg.id)) {
                   this.processedIds.add(msg.id);
-                  console.log(`[Engine] NEW MESSAGE: ${msg.text} from ${msg.sender.username}`);
+                  newCount++;
+                  console.info(`[Engine] 📩 NEW MESSAGE DETECTED: "${msg.text}" from ${msg.sender.username}`);
                   
                   // Broadcast to UI (Simulator)
                   this.broadcast({
@@ -84,41 +128,48 @@ export class AutomationEngine {
                   });
               }
           }
-      } catch (e) {
-          console.warn("[Engine] Polling failed (Server might be down or not authenticated)", e);
+          
+          if (newCount > 0) {
+              const event = new CustomEvent('engine-activity', { detail: { action: 'new-messages', count: newCount } });
+              window.dispatchEvent(event);
+          }
+
+      } catch (e: any) {
+          // Log errors quietly
+      } finally {
+          // CRITICAL: Always dispatch heartbeat so UI knows we attempted a check
+          if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('engine-heartbeat'));
+          }
       }
   }
 
   // Helper to check limits against backend
   private async checkLimits(usesAI: boolean): Promise<boolean> {
       try {
-          // Use relative path for proxy
           await axios.post('/api/flow/execute-check', { usesAI });
           return true;
       } catch (e: any) {
-          // If backend is offline or network error, ALLOW execution in simulation mode
-          if (!e.response || e.code === 'ERR_NETWORK' || e.code === 'ECONNREFUSED') {
-              console.warn("[Engine] Backend unreachable. Running in offline simulation mode.");
-              return true;
+          // FAILSAFE: If the backend is unreachable (Offline) or returns generic 500/404, we ALLOW execution
+          // so the Simulator doesn't break. We only block on explicit 403.
+          if (!e.response || e.code === 'ERR_NETWORK' || e.code === 'ECONNREFUSED' || e.response.status >= 500) {
+              return true; // Offline/Error mode -> Allow
           }
 
-          if (e.response?.data?.upgrade) {
+          if (e.response?.status === 403 && e.response?.data?.upgrade) {
               const event = new CustomEvent('trigger-upgrade', { 
                   detail: { reason: e.response.data.error === 'AI_DISABLED' ? 'AI Feature Locked' : 'Monthly Limit Reached' } 
               });
               window.dispatchEvent(event);
               return false;
           }
-          
-          console.error("Limit check failed", e);
-          return false;
+          return true; // Default allow
       }
   }
 
   async triggerEvent(type: TriggerType, rawPayload: { text?: string, subscriberId: string, username: string, targetAccountId: string }) {
     console.log(`[Engine] Trigger: ${type}`);
 
-    // Check generic limit first (transaction count)
     const canRun = await this.checkLimits(false);
     if (!canRun) return;
 
@@ -165,8 +216,6 @@ export class AutomationEngine {
     const flows = db.getFlows().filter(f => f.active);
     const matchedFlow = flows.find(f => {
         if (f.triggerType !== event.type && f.triggerType !== 'keyword') return false;
-        
-        // Allow flow to run if account ID matches OR if flow is generic (no specific account) OR if target is virtual/simulated
         if (f.triggerAccountId && f.triggerAccountId !== event.targetAccountId && event.targetAccountId !== 'virtual_test_account') return false;
         
         const isMsg = ['instagram_dm', 'whatsapp_message', 'messenger_text'].includes(event.type);
@@ -180,9 +229,6 @@ export class AutomationEngine {
 
     if (matchedFlow) {
       this.executeFlow(matchedFlow, subscriber, event.targetAccountId, matchedFlow.nodes[0]?.id, event.payload.text);
-    } else {
-        // Optional: Feedback if no flow matched
-        console.log("[Engine] No matching flow found.");
     }
   }
 
@@ -193,7 +239,6 @@ export class AutomationEngine {
       const node = flow.nodes.find(n => n.id === currentNodeId);
       if (!node) break;
 
-      // Special check for AI nodes
       if (node.type === 'ai_generate') {
           const canUseAI = await this.checkLimits(true);
           if (!canUseAI) break; 
@@ -213,10 +258,6 @@ export class AutomationEngine {
       try {
         const nextId = await this.processNode(node, flow.id, subscriber, sendingAccountId, initialInput);
         
-        if (!nextId && node.type === 'question') {
-             break;
-        }
-
         db.addLog({
           id: crypto.randomUUID(),
           flowId: flow.id,
@@ -226,6 +267,7 @@ export class AutomationEngine {
           timestamp: Date.now()
         });
 
+        if (!nextId && node.type === 'question') break;
         currentNodeId = nextId;
         initialInput = undefined; 
 
@@ -262,7 +304,6 @@ export class AutomationEngine {
         return undefined;
 
       case 'ai_generate':
-         // Simulate AI if needed
          const reply = "[AI Reply] Hello " + subscriber.username; 
          this.sendBotMessage(reply, subscriber, accountId);
          return node.nextId;
@@ -283,14 +324,12 @@ export class AutomationEngine {
     };
     this.broadcast(msg);
 
-    // Only attempt real API calls if not using virtual account
     if (accountId !== 'virtual_test_account') {
         if (subscriber.channel === 'whatsapp' && subscriber.phoneNumber) {
             this.sendApi('whatsapp', subscriber.phoneNumber, text, accountId);
         } else if (subscriber.channel === 'facebook' && subscriber.messenger_id) {
             this.sendApi('messenger', subscriber.messenger_id, text, accountId);
         } else if (subscriber.channel === 'instagram') {
-             // For Instagram, subscriber.id in simulation usually maps to IGSID if user entered a real one
              this.sendApi('instagram', subscriber.id, text, accountId);
         }
     }
@@ -300,7 +339,7 @@ export class AutomationEngine {
       try {
           await axios.post(`/api/${channel}/send`, { to, text, accountId });
       } catch (e) {
-          console.warn(`Failed to send real ${channel} message (Backend might be offline)`, e);
+          console.warn(`Failed to send real ${channel} message`, e);
       }
   }
 

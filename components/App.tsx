@@ -29,7 +29,8 @@ export default function App() {
         const accounts = db.getAllAccounts();
         for (const acc of accounts) {
             try {
-                await axios.post('http://localhost:3000/api/register-account', {
+                // FIXED: Use relative path for production
+                await axios.post('/api/register-account', {
                     externalId: acc.externalId,
                     accessToken: acc.accessToken,
                     platform: acc.platform,
@@ -43,12 +44,20 @@ export default function App() {
     syncAccounts();
   }, []);
 
-  // Start polling when user is active
+  // Start polling when user is active.
+  // CRITICAL: DO NOT return a cleanup function that stops polling. 
+  // The engine is a global singleton and should stay alive as long as the user is logged in.
   useEffect(() => {
-    if (user) {
+    console.log("[App] Auth State Check. User ID:", user?.id);
+    
+    if (user?.id) {
+        // Start polling if not already running
         engine.startPolling();
+    } else {
+        // Only stop if user explicitly logs out (user becomes null)
+        engine.stopPolling();
     }
-  }, [user]);
+  }, [user?.id]); 
 
   if (isLoading) {
     return <div className="h-screen w-screen bg-slate-950 flex items-center justify-center text-blue-500"><Loader className="animate-spin" size={32} /></div>;

@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   GitGraph, 
   Zap, 
@@ -28,7 +28,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
   const [showDemo, setShowDemo] = useState(false);
+  
+  // Hero Animation State
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  
+  // How it Works Animation State
+  const [howItWorksIndex, setHowItWorksIndex] = useState(0);
+
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Hero Text Interval (3 items + All = 4 states)
+    const heroInterval = setInterval(() => {
+      setHighlightIndex((prev) => (prev + 1) % 4);
+    }, 2000);
+
+    // How It Works Interval (4 items + All = 5 states)
+    const stepsInterval = setInterval(() => {
+      setHowItWorksIndex((prev) => (prev + 1) % 5);
+    }, 1500);
+
+    return () => {
+      clearInterval(heroInterval);
+      clearInterval(stepsInterval);
+    };
+  }, []);
 
   const toggleFaq = (index: number) => {
     setActiveFaq(activeFaq === index ? null : index);
@@ -53,6 +77,23 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
        });
     }
     setMobileMenuOpen(false);
+  };
+
+  const getHighlightClass = (index: number) => {
+    if (highlightIndex === 3) return "text-white opacity-100 blur-0"; // Show all
+    if (highlightIndex === index) return "text-white opacity-100 blur-0";
+    return "text-slate-500 opacity-30 blur-[1px]";
+  };
+
+  const getStepClass = (index: number) => {
+    // State 4 is "Show All"
+    if (howItWorksIndex === 4) return "opacity-100 scale-100 blur-0 bg-slate-800/80 border-slate-700";
+    
+    // Active State
+    if (howItWorksIndex === index) return "opacity-100 scale-105 blur-0 bg-slate-800 border-blue-500/50 shadow-lg shadow-blue-900/10";
+    
+    // Inactive State
+    return "opacity-40 scale-95 blur-[0.5px] bg-transparent border-transparent";
   };
 
   return (
@@ -146,10 +187,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
             </span>
           </h1>
           
-          <p className="max-w-2xl mx-auto text-lg text-slate-400 mb-10 leading-relaxed animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200">
-            Connect Instagram, WhatsApp, and Messenger. Build visual chatbots or let our AI generate them for you. 
-            Scale your customer support and sales 24/7.
-          </p>
+          <div className="max-w-2xl mx-auto text-lg mb-10 leading-relaxed animate-in fade-in slide-in-from-bottom-8 duration-700 delay-200">
+            <span className={`transition-all duration-700 ${getHighlightClass(0)}`}>
+              Connect Instagram, WhatsApp, and Messenger.{" "}
+            </span>
+            <span className={`transition-all duration-700 ${getHighlightClass(1)}`}>
+              Build visual chatbots or let our AI generate them for you.{" "}
+            </span>
+            <span className={`transition-all duration-700 ${getHighlightClass(2)}`}>
+              Scale your customer support and sales 24/7.
+            </span>
+          </div>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
             <button 
@@ -427,11 +475,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
                     { step: '03', title: 'Build Flow', desc: 'Use the visual editor or ask AI to build it for you.' },
                     { step: '04', title: 'Launch & Scale', desc: 'Turn it on. Watch your engagement skyrocket.' }
                 ].map((s, i) => (
-                    <div key={i} className="relative">
+                    <div key={i} className={`relative transition-all duration-500 p-6 rounded-xl border ${getStepClass(i)}`}>
                         <div className="text-6xl font-bold text-slate-800 mb-4 opacity-50">{s.step}</div>
                         <h3 className="text-xl font-bold text-white mb-2">{s.title}</h3>
                         <p className="text-slate-400 text-sm">{s.desc}</p>
-                        {i < 3 && <div className="hidden md:block absolute top-10 right-0 w-12 h-0.5 bg-slate-800 -mr-6"></div>}
+                        {i < 3 && <div className="hidden md:block absolute top-10 right-0 w-12 h-0.5 bg-slate-800 -mr-9"></div>}
                     </div>
                 ))}
             </div>

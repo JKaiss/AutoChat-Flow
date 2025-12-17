@@ -29,8 +29,8 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = () => {
     setLoadingPriceId(priceId);
     setErrorMsg('');
     try {
-      // We use the proxy path /api/billing... which forwards to localhost:3000
-      const res = await axios.post('http://localhost:3000/api/billing/checkout', { priceId });
+      // FIXED: Use relative path for production
+      const res = await axios.post('/api/billing/checkout', { priceId });
       
       if (res.data.url) {
         // Redirect to Stripe or Mock URL

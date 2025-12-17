@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { engine } from '../services/engine';
 import { ChatMessage, TriggerType, Account, Platform } from '../types';
 import { db } from '../services/db';
-import { Send, Instagram, Phone, Facebook, WifiOff, MessageSquare, AtSign, MessageCircle, User, RefreshCw, Activity } from 'lucide-react';
+import { Send, Instagram, Phone, Facebook, WifiOff, MessageSquare, AtSign, MessageCircle, User, RefreshCw, Activity, Zap, CheckCircle2 } from 'lucide-react';
 
 export const Simulator: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -14,53 +14,73 @@ export const Simulator: React.FC = () => {
   const [testSubscriberId, setTestSubscriberId] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastCheck, setLastCheck] = useState<Date | null>(null);
+  const [isPollingActive, setIsPollingActive] = useState(engine.isPolling);
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // FAILSAFE: Force start polling if it's inactive when Simulator mounts.
+    if (!engine.isPolling) {
+        console.warn("[Simulator] Engine was idle, forcing start...");
+        engine.startPolling();
+    }
+
     const allAccounts = db.getAllAccounts();
     setAccounts(allAccounts);
     
-    // Default account selection logic
-    const relevant = allAccounts.filter(a => a.platform === activeChannel);
-    if (relevant.length > 0) {
-        setSelectedAccountId(relevant[0].externalId);
-    } else {
-        setSelectedAccountId('virtual_test_account');
-    }
-
-    // Set default subscriber ID based on channel
-    setTestSubscriberId(`test_user_${activeChannel}`);
-
     // Subscribe to engine messages
     const handleMsg = (msg: ChatMessage) => {
         setMessages(prev => [...prev, msg]);
     };
     engine.addListener(handleMsg);
+    
+    // Subscribe to heartbeat events
+    const handleHeartbeat = () => {
+        setLastCheck(new Date());
+    };
+    
+    // Subscribe to status changes
+    const handleStatusChange = (e: any) => {
+        setIsPollingActive(e.detail.isPolling);
+    };
+
+    window.addEventListener('engine-heartbeat', handleHeartbeat);
+    window.addEventListener('engine-activity', handleHeartbeat);
+    window.addEventListener('engine-status-change', handleStatusChange);
+
     setMessages([{ id: 'init', sender: 'bot', text: 'Simulator Ready. Listening for events...', timestamp: Date.now() }]);
+    setIsPollingActive(engine.isPolling);
     
     return () => {
         engine.removeListener(handleMsg);
+        window.removeEventListener('engine-heartbeat', handleHeartbeat);
+        window.removeEventListener('engine-activity', handleHeartbeat);
+        window.removeEventListener('engine-status-change', handleStatusChange);
     };
   }, []);
 
-  // Update selected account when channel changes
+  // Sticky Account Selection Logic
   useEffect(() => {
-    const relevant = accounts.filter(a => a.platform === activeChannel);
-    if (relevant.length > 0) {
-        setSelectedAccountId(relevant[0].externalId);
-    } else {
-        setSelectedAccountId('virtual_test_account');
+    const relevantAccounts = accounts.filter(a => a.platform === activeChannel);
+    const isCurrentSelectionValid = relevantAccounts.some(a => a.externalId === selectedAccountId);
+
+    if (!isCurrentSelectionValid) {
+        if (relevantAccounts.length > 0) {
+            setSelectedAccountId(relevantAccounts[0].externalId);
+        } else {
+            setSelectedAccountId('virtual_test_account');
+        }
     }
-    // Reset subscriber ID default if it still has the default pattern
-    if (testSubscriberId.startsWith('test_user_')) {
+
+    if (!testSubscriberId || testSubscriberId.startsWith('test_user_')) {
         setTestSubscriberId(`test_user_${activeChannel}`);
     }
-  }, [activeChannel, accounts]);
+  }, [activeChannel, accounts]); 
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+  }, [messages, selectedAccountId]); 
 
   const handleTrigger = (type: TriggerType, content: string) => {
     if (!content.trim()) return;
@@ -68,7 +88,9 @@ export const Simulator: React.FC = () => {
     const targetAccount = selectedAccountId || 'virtual_test_account';
     const subId = testSubscriberId || `test_user_${activeChannel}`;
     
-    // Visual feedback in chat for user actions
+    console.log(`[Simulator] Sending '${content}' to Account: ${targetAccount}`);
+
+    // Visual feedback
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       sender: 'user',
@@ -106,6 +128,15 @@ export const Simulator: React.FC = () => {
     ? 'Virtual Account' 
     : (accounts.find(a => a.externalId === selectedAccountId)?.name || 'Unknown');
 
+  // Strict Filter
+  const displayMessages = messages.filter(m => {
+      if (m.id === 'init') return true;
+      if (!selectedAccountId || selectedAccountId === 'virtual_test_account') {
+          return !m.accountId || m.accountId === 'virtual_test_account';
+      }
+      return m.accountId === selectedAccountId;
+  });
+
   return (
     <div className="flex h-full bg-slate-900 p-8 gap-8 justify-center overflow-y-auto">
       {/* Controls Panel */}
@@ -141,6 +172,10 @@ export const Simulator: React.FC = () => {
                     ))}
                     <option value="virtual_test_account">Virtual Test Account (Offline)</option>
                 </select>
+                <p className="text-[10px] text-slate-500 mt-2 flex items-center gap-1">
+                    <CheckCircle2 size={10} className="text-green-500"/> 
+                    Messages will target: <span className="text-white font-mono">{selectedAccountId.slice(0,10)}...</span>
+                </p>
             </div>
             
             <div>
@@ -160,17 +195,32 @@ export const Simulator: React.FC = () => {
         </div>
 
         {/* Sync Status Panel */}
-        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                <Activity size={14} className={isSyncing ? "text-green-500 animate-pulse" : "text-slate-500"} />
-                Background Polling
+        <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <div className="flex justify-between items-center mb-2">
+                <div className="flex flex-col">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
+                        <Activity size={14} className={isSyncing ? "text-green-500 animate-pulse" : "text-slate-500"} />
+                        Auto-Polling
+                    </div>
+                    {isPollingActive ? (
+                        <span className="text-[10px] text-green-400 font-bold ml-5 animate-in fade-in">● ACTIVE (5s)</span>
+                    ) : (
+                        <span className="text-[10px] text-slate-600 font-bold ml-5">○ INACTIVE</span>
+                    )}
+                </div>
+                <button 
+                    onClick={handleForceSync}
+                    className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded font-bold flex items-center gap-1 transition-all"
+                >
+                    <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} /> Force Check
+                </button>
             </div>
-            <button 
-                onClick={handleForceSync}
-                className="text-xs bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded font-bold flex items-center gap-1 transition-all"
-            >
-                <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} /> Force Sync
-            </button>
+            {lastCheck && (
+                <div className="text-[10px] text-slate-500 border-t border-slate-700/50 pt-2 mt-2 flex justify-between">
+                    <span>Last heartbeat:</span>
+                    <span className="font-mono">{lastCheck.toLocaleTimeString()}</span>
+                </div>
+            )}
         </div>
 
         {/* Manual Triggers Panel */}
@@ -227,12 +277,6 @@ export const Simulator: React.FC = () => {
                     </button>
                  )}
              </div>
-             
-             <div className="mt-4 pt-4 border-t border-slate-700">
-                <p className="text-[10px] text-slate-400">
-                    <strong>Tip:</strong> Use "Comment" or "Story Mention" buttons to test flows triggered by those specific events. The chat log will show the event type.
-                </p>
-             </div>
         </div>
       </div>
 
@@ -258,16 +302,30 @@ export const Simulator: React.FC = () => {
             className={`flex-1 overflow-y-auto p-4 space-y-3 ${activeChannel === 'whatsapp' ? 'bg-[#0b141a]' : 'bg-black'}`} 
             ref={scrollRef}
         >
-            {messages.filter(m => m.id !== 'init').map((msg) => (
-                <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {displayMessages.filter(m => m.id !== 'init').length === 0 && (
+                <div className="text-center text-slate-600 text-xs mt-10 px-4">
+                    No recent messages for <strong>{activeAccountName}</strong>. <br/>
+                    (Activity from other accounts is hidden)
+                </div>
+            )}
+            
+            {displayMessages.filter(m => m.id !== 'init').map((msg) => (
+                <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
                     <div className={`max-w-[80%] p-3 rounded-2xl text-sm shadow-sm break-words ${msg.sender === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 rounded-bl-none'}`}>
                         {msg.text}
+                    </div>
+                    <div className="text-[9px] text-slate-600 mt-1 flex justify-between w-full max-w-[80%] px-1">
+                        <span>{new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        {msg.accountId && msg.accountId !== 'virtual_test_account' && (
+                            <span className="font-mono text-[8px] opacity-70 border border-slate-700 rounded px-1 ml-2">{msg.accountId.slice(0, 6)}...</span>
+                        )}
                     </div>
                 </div>
             ))}
         </div>
 
         <div className="bg-slate-900 p-4 pb-8">
+            <div className="text-[10px] text-slate-500 mb-1 pl-2">Sending to: {activeAccountName}</div>
             <div className="flex items-center gap-2 bg-slate-800 rounded-full px-4 py-2 border border-slate-700">
                 <input 
                     className="bg-transparent border-none outline-none text-white text-sm flex-1"

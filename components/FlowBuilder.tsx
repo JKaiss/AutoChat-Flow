@@ -60,6 +60,14 @@ export const FlowBuilder: React.FC = () => {
     setFlows(flows.map(f => f.id === updatedFlow.id ? updatedFlow : f));
   };
 
+  const handleDeleteFlow = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (window.confirm('Are you sure you want to delete this flow? This action cannot be undone.')) {
+        db.deleteFlow(id);
+        setFlows(flows.filter(f => f.id !== id));
+    }
+  };
+
   const addNode = (type: NodeType) => {
     if (!activeFlow) return;
 
@@ -118,7 +126,6 @@ export const FlowBuilder: React.FC = () => {
       setIsGenerating(true);
 
       try {
-          // Changed: Call Backend API instead of Client SDK
           const response = await axios.post('/api/ai/generate-flow', { prompt: aiPrompt });
           
           const nodes = response.data.nodes;
@@ -138,7 +145,6 @@ export const FlowBuilder: React.FC = () => {
           setShowAiModal(false);
           setAiPrompt('');
           
-          // Refresh usage to update progress bar
           refreshUsage();
 
       } catch (e: any) {
@@ -178,8 +184,15 @@ export const FlowBuilder: React.FC = () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {flows.map(flow => (
-            <div key={flow.id} onClick={() => setActiveFlowId(flow.id)} className="bg-slate-800 p-6 rounded-xl border border-slate-700 hover:border-blue-500 cursor-pointer transition-all">
-              <h3 className="font-bold text-lg mb-2">{flow.name}</h3>
+            <div key={flow.id} onClick={() => setActiveFlowId(flow.id)} className="bg-slate-800 p-6 rounded-xl border border-slate-700 hover:border-blue-500 cursor-pointer transition-all relative group">
+              <button 
+                onClick={(e) => handleDeleteFlow(e, flow.id)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-red-500 hover:bg-slate-700 p-2 rounded-lg transition-all z-20"
+                title="Delete Flow"
+              >
+                <Trash2 size={18} />
+              </button>
+              <h3 className="font-bold text-lg mb-2 pr-8 truncate">{flow.name}</h3>
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <span className={`px-2 py-1 rounded text-xs uppercase ${flow.triggerType.includes('whatsapp') ? 'bg-green-900 text-green-300' : flow.triggerType.includes('messenger') ? 'bg-blue-900 text-blue-300' : 'bg-pink-900 text-pink-300'}`}>
                     {flow.triggerType.split('_')[0]}

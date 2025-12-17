@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
 import { Account } from '../types';
 import { Facebook, Check, Trash2, Send, HelpCircle, AlertTriangle } from 'lucide-react';
@@ -9,10 +9,11 @@ export const ConnectFacebook: React.FC = () => {
   const [connectedPages, setConnectedPages] = useState<Account[]>([]);
   const [availablePages, setAvailablePages] = useState<any[]>([]);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [backendUrl, setBackendUrl] = useState('http://localhost:3000');
+  // FIXED: Removed backendUrl state (it was hardcoded to localhost:3000)
   const [testMessage, setTestMessage] = useState('');
   const [testRecipient, setTestRecipient] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
+  const authProcessed = useRef(false);
 
   useEffect(() => {
     setConnectedPages(db.getAccountsByPlatform('facebook'));
@@ -24,9 +25,11 @@ export const ConnectFacebook: React.FC = () => {
     const code = params.get('code');
     const state = params.get('state');
 
-    if (code && state === 'fb_connect') {
+    if (code && state === 'fb_connect' && !authProcessed.current) {
+        authProcessed.current = true;
         setIsConnecting(true);
-        axios.get(`${backendUrl}/auth/facebook/callback`, { params: { code } })
+        // FIXED: Use relative path
+        axios.get(`/auth/facebook/callback`, { params: { code } })
             .then(res => {
                 setAvailablePages(res.data.pages);
                 window.history.replaceState({}, document.title, window.location.pathname);
@@ -40,12 +43,14 @@ export const ConnectFacebook: React.FC = () => {
   };
 
   const startOAuth = () => {
-    window.location.href = `${backendUrl}/auth/facebook/login`;
+    // FIXED: Use relative path, let server middleware handle redirect
+    window.location.href = `/auth/facebook/login?flow=facebook`;
   };
 
   const connectPage = async (page: any) => {
     try {
-        await axios.post(`${backendUrl}/api/facebook/connect`, {
+        // FIXED: Use relative path
+        await axios.post(`/api/facebook/connect`, {
             pageId: page.id,
             accessToken: page.access_token,
             name: page.name
@@ -82,7 +87,8 @@ export const ConnectFacebook: React.FC = () => {
           return;
       }
       try {
-          await axios.post(`${backendUrl}/api/messenger/send`, {
+          // FIXED: Use relative path
+          await axios.post(`/api/messenger/send`, {
               to: testRecipient,
               text: testMessage || "Hello from AutoChat Flow!",
               pageId: page.externalId

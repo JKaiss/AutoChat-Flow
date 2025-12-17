@@ -22,7 +22,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
         if (mockPlan) {
             // Call dev endpoint to set plan if it's a mock upgrade
             console.log("Mock upgrade triggered for plan:", mockPlan);
-            axios.post('http://localhost:3000/api/dev/upgrade-mock', { plan: mockPlan })
+            // FIXED: Use relative path
+            axios.post('/api/dev/upgrade-mock', { plan: mockPlan })
                  .then(() => {
                      refreshUsage();
                      // Clean URL

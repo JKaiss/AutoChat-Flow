@@ -31,7 +31,8 @@ export const ConnectWhatsApp: React.FC = () => {
     if (!form.phoneNumberId || !form.accessToken) return;
 
     try {
-        await axios.post('http://localhost:3000/api/whatsapp/connect', form);
+        // FIXED: Use relative path
+        await axios.post('/api/whatsapp/connect', form);
         
         const newAccount: Account = {
             id: `wa_${form.phoneNumberId}`,
@@ -60,7 +61,8 @@ export const ConnectWhatsApp: React.FC = () => {
     if (!testNumber) return;
     setTestStatus('sending');
     try {
-        await axios.post('http://localhost:3000/api/whatsapp/send', {
+        // FIXED: Use relative path
+        await axios.post('/api/whatsapp/send', {
             to: testNumber,
             text: "Hello from AutoChat Flow! 🚀 This is a test message.",
             accountId: account.externalId
