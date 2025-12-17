@@ -186,16 +186,13 @@ app.get('/auth/facebook/callback', async (req, res) => {
 app.post('/api/register-account', authMiddleware, (req, res) => {
     const { externalId, platform, name, accessToken } = req.body;
     const idx = db.accounts.findIndex(a => a.externalId === externalId);
-    const acc = { externalId, platform, name, accessToken, userId: req.user.id, status: 'active' };
+    const acc = { externalId, platform, name, accessToken, userId: req.user.id, status: 'active', lastChecked: Date.now() };
     if (idx >= 0) db.accounts[idx] = { ...db.accounts[idx], ...acc };
     else db.accounts.push(acc);
     saveDb();
     res.sendStatus(200);
 });
 
-/**
- * FETCH SENDER ID LOGIC (Enriches user data from Meta)
- */
 async function getSenderProfile(senderId, accessToken, platform) {
     try {
         const url = `https://graph.facebook.com/v21.0/${senderId}`;
@@ -250,12 +247,14 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
                 }
             }
         } catch (e) {
-            console.error(`Polling failed for ${acc.name}`, e.response?.data || e.message);
             const errData = e.response?.data?.error;
+            console.error(`[POLLING FAILED] ${acc.name}:`, JSON.stringify(errData || e.message));
+            
             acc.status = 'error';
             acc.lastChecked = Date.now();
+            
             if (errData?.error_subcode === 2207085) {
-                acc.lastError = "Messaging disabled. Enable 'Allow Access to Messages' in Instagram App settings.";
+                acc.lastError = "Access Denied: Enable 'Allow Access to Messages' in Instagram App settings.";
             } else {
                 acc.lastError = errData?.message || e.message;
             }
@@ -280,10 +279,6 @@ app.post('/api/flow/execute-check', authMiddleware, (req, res) => {
     res.sendStatus(200);
 });
 
-/**
- * REFINED SEND LOGIC
- * Fixes 500 status by ensuring ID types are strictly strings and catching Meta-specific failures.
- */
 const handleSend = async (req, res, platform) => {
     const { to, text, accountId } = req.body;
     const account = db.accounts.find(a => a.externalId === accountId);
@@ -293,31 +288,42 @@ const handleSend = async (req, res, platform) => {
         let url = '';
         let body = {};
         
+        // CRITICAL: Meta IDs must be strings. Casting here to prevent 500s.
+        const recipientId = String(to);
+        const messageText = String(text);
+
         if (platform === 'facebook' || platform === 'instagram') {
             url = `https://graph.facebook.com/v21.0/me/messages?access_token=${account.accessToken}`;
             body = { 
-                recipient: { id: String(to) }, 
-                message: { text: String(text) },
+                recipient: { id: recipientId }, 
+                message: { text: messageText },
                 messaging_type: "RESPONSE" 
             };
         } else if (platform === 'whatsapp') {
             url = `https://graph.facebook.com/v21.0/${account.externalId}/messages?access_token=${account.accessToken}`;
-            body = { messaging_product: "whatsapp", to: String(to), text: { body: String(text) } };
+            body = { messaging_product: "whatsapp", to: recipientId, text: { body: messageText } };
         }
         
         const graphRes = await axios.post(url, body);
         res.json({ success: true, message_id: graphRes.data.message_id || graphRes.data.id });
     } catch (e) {
-        console.error(`[${platform.toUpperCase()}] SEND ERROR DETAIL:`, e.response?.data || e.message);
+        const metaErrorObj = e.response?.data?.error;
+        console.error(`[${platform.toUpperCase()} SEND FAILED]`, JSON.stringify(metaErrorObj || e.message));
         
-        // Pass the full Meta error object back to the client for debugging
-        const metaError = e.response?.data?.error?.message || e.message;
-        const subcode = e.response?.data?.error?.error_subcode;
-        
+        const errorMessage = metaErrorObj?.message || e.message;
+        const subcode = metaErrorObj?.error_subcode;
+
+        // If we hit the Fatal Permission error during a send, update account status
+        if (subcode === 2207085) {
+            account.status = 'error';
+            account.lastError = "Access Denied: Enable 'Allow Access to Messages' in Instagram App settings.";
+            saveDb();
+        }
+
         res.status(500).json({ 
-            error: metaError, 
+            error: errorMessage, 
             subcode: subcode,
-            detail: e.response?.data?.error 
+            details: metaErrorObj
         });
     }
 };

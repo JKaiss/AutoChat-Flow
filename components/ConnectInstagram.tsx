@@ -243,7 +243,7 @@ export const ConnectInstagram: React.FC = () => {
                   )}
                   <button 
                     onClick={() => removeAccount(acc.id)}
-                    className="text-slate-500 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 rounded-lg"
+                    className="text-slate-500 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 rounded-lg"
                   >
                     <Trash2 size={18} />
                   </button>
@@ -252,16 +252,19 @@ export const ConnectInstagram: React.FC = () => {
           ))}
           
           {accounts.some(a => a.status === 'error') && (
-              <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl">
+              <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl animate-in slide-in-from-top-2 duration-300">
                   <h4 className="text-xs font-bold text-red-300 uppercase mb-2 flex items-center gap-2">
-                      <HelpCircle size={14} /> How to fix Fatal Error (2207085)
+                      <HelpCircle size={14} /> Troubleshooting Fatal Error
                   </h4>
+                  <p className="text-[10px] text-slate-300 mb-3">
+                      The current connection is blocked by Instagram privacy settings. Follow these steps:
+                  </p>
                   <ol className="text-[10px] text-slate-400 space-y-2 list-decimal pl-4">
-                      <li>Open <strong>Instagram App</strong> on your phone.</li>
-                      <li>Go to <strong>Settings & Privacy</strong> &gt; <strong>Messages and story replies</strong>.</li>
-                      <li>Select <strong>Message controls</strong>.</li>
-                      <li>Toggle <strong>"Allow Access to Messages"</strong> to ON.</li>
-                      <li>Re-authenticate the account here.</li>
+                      <li>Open the <strong>Instagram App</strong> on your phone.</li>
+                      <li>Go to <strong>Settings & Privacy</strong> > <strong>Messages and story replies</strong>.</li>
+                      <li>Tap <strong>Message controls</strong>.</li>
+                      <li>Under 'Connected tools', toggle <strong>"Allow Access to Messages"</strong> to <strong>ON</strong>.</li>
+                      <li>Click the <strong>Refresh</strong> icon on the account above.</li>
                   </ol>
               </div>
           )}

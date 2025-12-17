@@ -24,9 +24,8 @@ export class AutomationEngine {
    * Updates the authentication token used for polling the backend.
    */
   setToken(token: string | null) {
-      console.debug("[Engine] Token updated:", token ? "Token Present" : "Token Removed");
       this.authToken = token;
-      // Trigger an immediate poll if we just got a token
+      console.debug("[Engine] Auth Token Synced. Polling will use new identity.");
       if (token && this.isPolling) {
           this.pollMessages();
       }
@@ -91,7 +90,7 @@ export class AutomationEngine {
               }
           }
       } catch (e: any) {
-          console.warn("[Engine] Polling error:", e.message);
+          console.warn("[Engine] Polling failed cycle:", e.response?.data?.error || e.message);
       } finally {
           if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('engine-heartbeat'));
       }
@@ -212,11 +211,11 @@ export class AutomationEngine {
     this.broadcast(msg);
     
     if (accountId !== 'virtual_test_account' && this.authToken) {
-        console.debug(`[Engine] Outgoing ${subscriber.channel} message to ${subscriber.id}`);
+        console.debug(`[Engine] Outbound delivery: ${subscriber.channel} to ${subscriber.id} via ${accountId}`);
         axios.post(`/api/${subscriber.channel}/send`, { to: subscriber.id, text, accountId }, {
             headers: { Authorization: `Bearer ${this.authToken}` }
         }).catch((err) => {
-            console.error(`[Engine] ${subscriber.channel} send failed:`, err.response?.data || err.message);
+            console.error(`[Engine] ${subscriber.channel} delivery failed:`, err.response?.data?.error || err.message);
         });
     }
   }
