@@ -25,8 +25,20 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showLanding, setShowLanding] = useState(true);
 
-  // Simple Path Routing for Privacy Page
+  // Simple Path Routing for Privacy Page & OAuth Redirects
   const path = window.location.pathname;
+
+  useEffect(() => {
+    // Detect path for internal routing to specific tabs (important for OAuth callbacks)
+    if (path === '/connect-fb') setActiveTab('connect-fb');
+    else if (path === '/connect-ig') setActiveTab('connect-ig');
+    else if (path === '/settings') setActiveTab('settings');
+    else if (path === '/connections') setActiveTab('connections');
+    else if (path === '/flows') setActiveTab('flows');
+    else if (path === '/simulator') setActiveTab('simulator');
+    else if (path === '/logs') setActiveTab('logs');
+  }, [path]);
+
   if (path === '/privacy') {
     return <PrivacyPolicy />;
   }

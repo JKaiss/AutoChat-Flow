@@ -24,7 +24,7 @@ if (fs.existsSync(rootEnvPath)) {
 const app = express();
 
 // --- PROXY FIX ---
-// Essential for Docker/Nginx environments to detect https correctly
+// Essential for Docker/Nginx/CloudRun environments to detect https correctly
 app.set('trust proxy', true);
 
 app.use(cors());
@@ -59,13 +59,14 @@ const getRedirectUri = (req, path) => {
         return `${base}${path}`;
     }
     
-    // Priority 2: Trust Proxy headers (X-Forwarded-Proto)
+    // Priority 2: Standard detection using trust-proxy and headers
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
     
     // Priority 3: Default to https if not on localhost
-    const finalProto = (protocol === 'http' && !req.headers.host.includes('localhost')) ? 'https' : protocol;
+    const finalProto = (protocol === 'http' && !host.includes('localhost')) ? 'https' : protocol;
     
-    return `${finalProto}://${req.get('host')}${path}`;
+    return `${finalProto}://${host}${path}`;
 };
 
 const getMetaConfig = () => ({
