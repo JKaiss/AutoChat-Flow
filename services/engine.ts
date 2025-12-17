@@ -1,4 +1,3 @@
-
 import { db } from "./db";
 import { Flow, Subscriber, FlowNode, ChatMessage, TriggerType, Platform } from "../types";
 import { GoogleGenAI } from "@google/genai";
@@ -234,6 +233,7 @@ export class AutomationEngine {
 
   private async executeFlow(flow: Flow, subscriber: Subscriber, currentAccountId: string, startNodeId?: string, initialInput?: string) {
     let currentNodeId: string | undefined = startNodeId;
+    let userInput = initialInput;
 
     while (currentNodeId) {
       const node = flow.nodes.find(n => n.id === currentNodeId);
@@ -256,7 +256,7 @@ export class AutomationEngine {
       });
 
       try {
-        const nextId = await this.processNode(node, flow.id, subscriber, sendingAccountId, initialInput);
+        const nextId = await this.processNode(node, flow.id, subscriber, sendingAccountId, userInput);
         
         db.addLog({
           id: crypto.randomUUID(),
@@ -269,7 +269,7 @@ export class AutomationEngine {
 
         if (!nextId && node.type === 'question') break;
         currentNodeId = nextId;
-        initialInput = undefined; 
+        userInput = undefined; // Clear input after processing logic
 
       } catch (e) {
         console.error("Execution error", e);
@@ -304,7 +304,27 @@ export class AutomationEngine {
         return undefined;
 
       case 'ai_generate':
-         const reply = "[AI Reply] Hello " + subscriber.username; 
+         let prompt = node.data.aiPrompt || "Say hello";
+         if (userInput) {
+             prompt += `\n\nContext - The user just said: "${userInput}"`;
+         }
+         
+         let reply = "";
+         try {
+             // Use Gemini API to generate response
+             const result = await this.ai.models.generateContent({
+                 model: 'gemini-2.5-flash',
+                 contents: prompt,
+                 config: {
+                    systemInstruction: `You are a helpful automated assistant talking to ${subscriber.username}. Keep responses concise and friendly (under 300 chars usually).`
+                 }
+             });
+             reply = result.text || "";
+         } catch(e) {
+             console.error("AI Gen Error", e);
+             reply = "I'm having a bit of trouble thinking right now. Please try again later.";
+         }
+
          this.sendBotMessage(reply, subscriber, accountId);
          return node.nextId;
         
