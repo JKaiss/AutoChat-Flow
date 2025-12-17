@@ -24,7 +24,6 @@ if (fs.existsSync(rootEnvPath)) {
 const app = express();
 
 // --- PROXY FIX ---
-// Essential for Docker/Nginx/CloudRun environments to detect https correctly
 app.set('trust proxy', true);
 
 app.use(cors());
@@ -51,21 +50,14 @@ function saveDb() {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
-// Helper to construct redirect URI safely
 const getRedirectUri = (req, path) => {
-    // Priority 1: User-configured Public URL from Settings
     if (db.settings?.publicUrl) {
-        const base = db.settings.publicUrl.replace(/\/$/, ''); // Remove trailing slash
+        const base = db.settings.publicUrl.replace(/\/$/, '');
         return `${base}${path}`;
     }
-    
-    // Priority 2: Standard detection using trust-proxy and headers
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
     const host = req.get('host');
-    
-    // Priority 3: Default to https if not on localhost
     const finalProto = (protocol === 'http' && !host.includes('localhost')) ? 'https' : protocol;
-    
     return `${finalProto}://${host}${path}`;
 };
 
@@ -89,18 +81,6 @@ const CONFIG = {
 
 const findUser = (email) => db.users.find(u => u.email === email);
 const getUserById = (id) => db.users.find(u => u.id === id);
-const createUser = (email, password) => {
-    const newUser = {
-        id: crypto.randomUUID(),
-        email,
-        password: bcrypt.hashSync(password, 8),
-        plan: 'free',
-        createdAt: Date.now()
-    };
-    db.users.push(newUser);
-    saveDb();
-    return newUser;
-};
 
 const getUsage = (userId) => {
     const month = new Date().toISOString().slice(0, 7);
@@ -113,7 +93,19 @@ const getUsage = (userId) => {
     return rec;
 };
 
-// --- ROUTES ---
+// --- AUTH MIDDLEWARE ---
+const authMiddleware = (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'No token' });
+    try {
+        const decoded = jwt.verify(token, CONFIG.JWT_SECRET);
+        req.user = getUserById(decoded.id);
+        if (!req.user) throw new Error();
+        next();
+    } catch (e) { res.status(401).json({ error: 'Invalid token' }); }
+};
+
+// --- API ROUTES ---
 
 app.get('/api/config/status', (req, res) => {
     const meta = getMetaConfig();
@@ -133,18 +125,15 @@ app.post('/api/config/settings', (req, res) => {
     res.json({ status: 'ok' });
 });
 
-app.post('/api/auth/register', (req, res) => {
-    const { email, password } = req.body;
-    if (findUser(email)) return res.status(400).json({ error: 'User exists' });
-    const user = createUser(email, password);
-    const token = jwt.sign({ id: user.id }, CONFIG.JWT_SECRET);
-    res.json({ user, token });
-});
-
 app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body;
     if (email === 'demo@autochat.com' && password === 'demo123') {
-        const user = findUser(email) || createUser(email, password);
+        let user = findUser(email);
+        if (!user) {
+            user = { id: crypto.randomUUID(), email, plan: 'free', createdAt: Date.now() };
+            db.users.push(user);
+            saveDb();
+        }
         const token = jwt.sign({ id: user.id }, CONFIG.JWT_SECRET);
         return res.json({ user, token });
     }
@@ -154,49 +143,30 @@ app.post('/api/auth/login', (req, res) => {
     res.json({ user, token });
 });
 
-const authMiddleware = (req, res, next) => {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(401).json({ error: 'No token' });
-    try {
-        const decoded = jwt.verify(token, CONFIG.JWT_SECRET);
-        req.user = getUserById(decoded.id);
-        if (!req.user) throw new Error();
-        next();
-    } catch (e) { res.status(401).json({ error: 'Invalid token' }); }
-};
-
 app.get('/api/auth/me', authMiddleware, (req, res) => {
     const usage = getUsage(req.user.id);
     const plan = CONFIG.PLANS[req.user.plan] || CONFIG.PLANS.free;
     res.json({ user: req.user, usage: { ...usage, limit: plan.limit, aiEnabled: plan.ai, maxAccounts: plan.accounts } });
 });
 
+// --- META OAUTH ---
+
 app.get('/auth/facebook/login', (req, res) => {
     const meta = getMetaConfig();
     const flow = req.query.flow || 'instagram';
-    if (!meta.appId || !meta.appSecret) {
-        return res.redirect('/?config_error=missing_meta_keys');
-    }
-    
-    // Build redirect URI using helper
     const callbackPath = flow === 'facebook' ? '/connect-fb' : '/connect-ig';
     const redirectUri = getRedirectUri(req, callbackPath);
-    
     const scopes = 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages';
     const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${meta.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&state=${flow}`;
     res.redirect(url);
 });
 
-// Generic callback for Meta OAuth
 app.get('/auth/facebook/callback', async (req, res) => {
     const { code, state } = req.query;
     const meta = getMetaConfig();
-    if (!meta.appId || !meta.appSecret) return res.status(500).json({ error: 'Config missing' });
-    
     try {
         const callbackPath = state === 'facebook' ? '/connect-fb' : '/connect-ig';
         const redirectUri = getRedirectUri(req, callbackPath);
-
         const tokenRes = await axios.get('https://graph.facebook.com/v21.0/oauth/access_token', {
             params: { client_id: meta.appId, client_secret: meta.appSecret, redirect_uri: redirectUri, code }
         });
@@ -204,12 +174,14 @@ app.get('/auth/facebook/callback', async (req, res) => {
         const pagesRes = await axios.get('https://graph.facebook.com/v21.0/me/accounts', {
             params: { access_token: userAccessToken, fields: 'id,name,access_token,picture,instagram_business_account' }
         });
-
         res.json({ pages: pagesRes.data.data });
     } catch (e) {
+        console.error("Meta Callback Error", e.response?.data || e.message);
         res.status(500).json({ error: e.response?.data?.error?.message || e.message });
     }
 });
+
+// --- AUTOMATION ENGINE API ---
 
 app.post('/api/register-account', authMiddleware, (req, res) => {
     const { externalId, platform, name, accessToken } = req.body;
@@ -220,6 +192,56 @@ app.post('/api/register-account', authMiddleware, (req, res) => {
     saveDb();
     res.sendStatus(200);
 });
+
+app.post('/api/instagram/check-messages', async (req, res) => {
+    // Basic stub for the engine to poll without 404s
+    // Real implementation would iterate through connected accounts and call the Graph API
+    res.json({ messages: [] });
+});
+
+app.post('/api/flow/execute-check', authMiddleware, (req, res) => {
+    const { usesAI } = req.body;
+    const usage = getUsage(req.user.id);
+    const plan = CONFIG.PLANS[req.user.plan] || CONFIG.PLANS.free;
+    
+    if (usage.count >= plan.limit) return res.status(403).json({ error: 'Limit reached' });
+    if (usesAI && !plan.ai) return res.status(403).json({ error: 'Upgrade for AI' });
+    
+    usage.count++;
+    saveDb();
+    res.sendStatus(200);
+});
+
+// Unified send endpoint
+const handleSend = async (req, res, platform) => {
+    const { to, text, accountId } = req.body;
+    const account = db.accounts.find(a => a.externalId === accountId);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    
+    try {
+        let url = '';
+        let body = {};
+        
+        if (platform === 'facebook' || platform === 'instagram') {
+            url = `https://graph.facebook.com/v21.0/me/messages`;
+            body = { recipient: { id: to }, message: { text }, access_token: account.accessToken };
+        } else if (platform === 'whatsapp') {
+            url = `https://graph.facebook.com/v21.0/${account.externalId}/messages`;
+            body = { messaging_product: "whatsapp", to, text: { body: text }, access_token: account.accessToken };
+        }
+        
+        await axios.post(url, body);
+        res.json({ success: true });
+    } catch (e) {
+        console.error(`${platform} send error`, e.response?.data || e.message);
+        res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+    }
+};
+
+app.post('/api/facebook/send', authMiddleware, (req, res) => handleSend(req, res, 'facebook'));
+app.post('/api/messenger/send', authMiddleware, (req, res) => handleSend(req, res, 'facebook')); // Alias for legacy
+app.post('/api/instagram/send', authMiddleware, (req, res) => handleSend(req, res, 'instagram'));
+app.post('/api/whatsapp/send', authMiddleware, (req, res) => handleSend(req, res, 'whatsapp'));
 
 app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => {
     const apiKey = getGeminiKey();
