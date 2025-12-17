@@ -1,47 +1,43 @@
-# Stage 1: Build the frontend
-FROM node:20-alpine as builder
+# Stage 1: Build the Frontend
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Accept API_KEY as a build argument to inject it during build
-ARG API_KEY
-ENV API_KEY=$API_KEY
-
+# Copy package files
 COPY package*.json ./
+
+# Install all dependencies (including devDependencies for Vite build)
 RUN npm install
 
+# Copy the rest of the source code
 COPY . .
 
-# Create .env file with the API key
-# This is required so Vite can inline the key during 'npm run build'
-# and so we can copy it to the production stage for the backend.
-RUN echo "API_KEY=$API_KEY" > .env
-RUN echo "PORT=3000" >> .env
-
-# Build the React app (outputs to /app/dist)
+# Build the React frontend (outputs to /dist)
 RUN npm run build
 
-# Stage 2: Setup the production environment
+# Stage 2: Setup the Production Server
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install only production dependencies to keep image small
+# Copy package.json to install production dependencies
 COPY package*.json ./
-RUN npm install --production
 
-# Copy built assets from builder
+# Install ONLY production dependencies (keeps image light)
+RUN npm install --only=production
+
+# Copy the build output from the builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy server code
+# Copy the server directory
 COPY --from=builder /app/server ./server
 
-# CRITICAL FIX: Copy the .env file from builder to production
-# This ensures the Node.js backend can find process.env.API_KEY at runtime
-COPY --from=builder /app/.env .
+# Set environment to production
+ENV NODE_ENV=production
+ENV PORT=3000
 
-# Expose the port the server listens on
+# Expose the port
 EXPOSE 3000
 
-# Start the server
-CMD ["npm", "start"]
+# Start the application
+CMD ["node", "server/server.js"]
