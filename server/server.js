@@ -193,10 +193,55 @@ app.post('/api/register-account', authMiddleware, (req, res) => {
     res.sendStatus(200);
 });
 
-app.post('/api/instagram/check-messages', async (req, res) => {
-    // Basic stub for the engine to poll without 404s
-    // Real implementation would iterate through connected accounts and call the Graph API
-    res.json({ messages: [] });
+/**
+ * FETCH SENDER ID LOGIC (Enriches user data from Meta)
+ */
+async function getSenderProfile(senderId, accessToken, platform) {
+    try {
+        const url = `https://graph.facebook.com/v21.0/${senderId}`;
+        const params = { access_token: accessToken, fields: 'name,first_name,last_name,profile_pic' };
+        const res = await axios.get(url, { params });
+        return {
+            id: senderId,
+            username: res.data.name || res.data.first_name || 'User',
+            picture: res.data.profile_pic || null
+        };
+    } catch (e) {
+        return { id: senderId, username: 'User', picture: null };
+    }
+}
+
+app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
+    const userAccounts = db.accounts.filter(a => a.userId === req.user.id && a.platform === 'instagram');
+    const allMessages = [];
+
+    for (const acc of userAccounts) {
+        try {
+            // Polling Meta Graph API for conversations
+            const convRes = await axios.get(`https://graph.facebook.com/v21.0/me/conversations`, {
+                params: { access_token: acc.accessToken, fields: 'messages{message,from,created_time},unread_count', platform: 'instagram' }
+            });
+
+            const conversations = convRes.data.data || [];
+            for (const conv of conversations) {
+                const lastMsg = conv.messages?.data?.[0];
+                // Only process if unread or very recent
+                if (lastMsg && lastMsg.from.id !== acc.externalId) {
+                    const profile = await getSenderProfile(lastMsg.from.id, acc.accessToken, 'instagram');
+                    allMessages.push({
+                        id: lastMsg.id,
+                        text: lastMsg.message,
+                        timestamp: lastMsg.created_time,
+                        accountId: acc.externalId,
+                        sender: profile
+                    });
+                }
+            }
+        } catch (e) {
+            console.error(`Polling failed for ${acc.name}`, e.message);
+        }
+    }
+    res.json({ messages: allMessages });
 });
 
 app.post('/api/flow/execute-check', authMiddleware, (req, res) => {

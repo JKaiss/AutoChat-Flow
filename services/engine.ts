@@ -1,3 +1,4 @@
+
 import { db } from "./db";
 import { Flow, Subscriber, FlowNode, ChatMessage, TriggerType, Platform } from "../types";
 import { GoogleGenAI } from "@google/genai";
@@ -63,15 +64,24 @@ export class AutomationEngine {
               if (!this.processedIds.has(msg.id)) {
                   this.processedIds.add(msg.id);
                   this.broadcast({
-                      id: msg.id, sender: 'user', text: msg.text, timestamp: new Date(msg.timestamp).getTime(),
-                      channel: 'instagram', accountId: msg.accountId
+                      id: msg.id, 
+                      sender: 'user', 
+                      text: msg.text, 
+                      timestamp: new Date(msg.timestamp).getTime(),
+                      channel: 'instagram', 
+                      accountId: msg.accountId
                   });
                   await this.triggerEvent('instagram_dm', {
-                      text: msg.text, subscriberId: msg.sender.id, username: msg.sender.username, targetAccountId: msg.accountId
+                      text: msg.text, 
+                      subscriberId: msg.sender.id, 
+                      username: msg.sender.username, 
+                      targetAccountId: msg.accountId
                   });
               }
           }
-      } catch (e) {} finally {
+      } catch (e) {
+          console.warn("Polling cycle error", e.message);
+      } finally {
           if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('engine-heartbeat'));
       }
   }
