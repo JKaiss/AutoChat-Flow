@@ -248,7 +248,8 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
             }
         } catch (e) {
             const errData = e.response?.data?.error;
-            console.error(`[POLLING FAILED] ${acc.name}:`, JSON.stringify(errData || e.message));
+            // Enhanced logging to stderr for Cloud Run visibility
+            process.stderr.write(`[POLLING FAILED] Account: ${acc.name} - Reason: ${JSON.stringify(errData || e.message)}\n`);
             
             acc.status = 'error';
             acc.lastChecked = Date.now();
@@ -308,7 +309,8 @@ const handleSend = async (req, res, platform) => {
         res.json({ success: true, message_id: graphRes.data.message_id || graphRes.data.id });
     } catch (e) {
         const metaErrorObj = e.response?.data?.error;
-        console.error(`[${platform.toUpperCase()} SEND FAILED]`, JSON.stringify(metaErrorObj || e.message));
+        // Enhanced logging to stderr for Cloud Run visibility
+        process.stderr.write(`[${platform.toUpperCase()} SEND FAILED] Detail: ${JSON.stringify(metaErrorObj || e.message)}\n`);
         
         const errorMessage = metaErrorObj?.message || e.message;
         const subcode = metaErrorObj?.error_subcode;

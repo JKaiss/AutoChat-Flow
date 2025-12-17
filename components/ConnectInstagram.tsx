@@ -261,7 +261,7 @@ export const ConnectInstagram: React.FC = () => {
                   </p>
                   <ol className="text-[10px] text-slate-400 space-y-2 list-decimal pl-4">
                       <li>Open the <strong>Instagram App</strong> on your phone.</li>
-                      <li>Go to <strong>Settings & Privacy</strong> > <strong>Messages and story replies</strong>.</li>
+                      <li>Go to <strong>Settings & Privacy</strong> &gt; <strong>Messages and story replies</strong>.</li>
                       <li>Tap <strong>Message controls</strong>.</li>
                       <li>Under 'Connected tools', toggle <strong>"Allow Access to Messages"</strong> to <strong>ON</strong>.</li>
                       <li>Click the <strong>Refresh</strong> icon on the account above.</li>
