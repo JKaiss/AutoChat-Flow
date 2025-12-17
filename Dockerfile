@@ -1,43 +1,37 @@
-# Stage 1: Build the Frontend
+# Stage 1: Build the frontend
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and install all dependencies (including devDependencies for Vite)
 COPY package*.json ./
-
-# Install all dependencies (including devDependencies for Vite build)
 RUN npm install
 
 # Copy the rest of the source code
 COPY . .
 
-# Build the React frontend (outputs to /dist)
+# Build the React app (outputs to /app/dist)
 RUN npm run build
 
-# Stage 2: Setup the Production Server
+# Stage 2: Setup the production backend
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package.json to install production dependencies
+# Copy package files again
 COPY package*.json ./
 
-# Install ONLY production dependencies (keeps image light)
-RUN npm install --only=production
+# Install only production dependencies (skips Vite, etc.)
+RUN npm install --omit=dev
 
-# Copy the build output from the builder stage
+# Copy the built frontend assets from the builder stage
 COPY --from=builder /app/dist ./dist
 
-# Copy the server directory
-COPY --from=builder /app/server ./server
+# Copy the backend server code
+COPY server ./server
 
-# Set environment to production
-ENV NODE_ENV=production
-ENV PORT=3000
-
-# Expose the port
+# Expose the port the app runs on
 EXPOSE 3000
 
-# Start the application
+# Start the server
 CMD ["node", "server/server.js"]
