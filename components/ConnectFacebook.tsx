@@ -253,7 +253,7 @@ export const ConnectFacebook: React.FC = () => {
                     <ul className="list-disc pl-4 space-y-3 text-blue-100/70 text-xs">
                         <li>Ensure <strong>'Messages'</strong> is enabled in your Page Settings.</li>
                         <li>In your Meta App Dashboard, ensure the <strong>'Messenger'</strong> product is added.</li>
-                        <li>Whitelist your domain in the <strong>'App Settings > Webhooks'</strong> section if testing in production.</li>
+                        <li>Whitelist your domain in the <strong>'App Settings &gt; Webhooks'</strong> section if testing in production.</li>
                     </ul>
                 </div>
             </div>
