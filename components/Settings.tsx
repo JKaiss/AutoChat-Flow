@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe, FileText, Copy } from 'lucide-react';
 import axios from 'axios';
 
 export const Settings: React.FC = () => {
@@ -48,6 +48,13 @@ export const Settings: React.FC = () => {
       setSaving(false);
     }
   };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    alert('Copied to clipboard!');
+  };
+
+  const privacyUrl = form.publicUrl ? `${form.publicUrl.replace(/\/$/, '')}/privacy` : `${window.location.origin}/privacy`;
 
   if (loading) return <div className="p-8 text-slate-500">Loading Configuration...</div>;
 
@@ -131,22 +138,36 @@ export const Settings: React.FC = () => {
           </div>
 
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
-            <h3 className="text-lg font-bold text-white mb-4">System Status</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Meta OAuth</span>
-                {status?.metaConfigured ? 
-                  <span className="text-green-400 font-bold flex items-center gap-1 text-xs"><CheckCircle size={14}/> Configured</span> : 
-                  <span className="text-amber-400 font-bold flex items-center gap-1 text-xs"><AlertCircle size={14}/> Not Ready</span>
-                }
-              </div>
-              <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50 flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Gemini AI</span>
-                {status?.aiConfigured ? 
-                  <span className="text-green-400 font-bold flex items-center gap-1 text-xs"><CheckCircle size={14}/> Active</span> : 
-                  <span className="text-red-400 font-bold flex items-center gap-1 text-xs"><AlertCircle size={14}/> Missing API Key</span>
-                }
-              </div>
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <FileText size={20} className="text-amber-400" /> Meta App Requirements
+            </h3>
+            <div className="space-y-4">
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Privacy Policy URL</label>
+                    <div className="flex gap-2">
+                        <input 
+                            readOnly
+                            value={privacyUrl}
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 font-mono outline-none"
+                        />
+                        <button 
+                            onClick={() => copyToClipboard(privacyUrl)}
+                            className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-slate-300"
+                        >
+                            <Copy size={16} />
+                        </button>
+                        <a 
+                            href="/privacy" 
+                            target="_blank"
+                            className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-slate-300"
+                        >
+                            <ExternalLink size={16} />
+                        </a>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-2">
+                        Copy this URL and paste it into the <b>Privacy Policy URL</b> field in your Meta App settings.
+                    </p>
+                </div>
             </div>
           </div>
         </div>
@@ -157,10 +178,10 @@ export const Settings: React.FC = () => {
               <Shield size={18} /> HTTPS is Required
             </h3>
             <p className="text-indigo-100/70 text-sm leading-relaxed mb-4">
-              Meta (Facebook) requires the redirect URL to use <strong>https://</strong> in production environments.
+              Meta (Facebook) requires the redirect URL and Privacy Policy to use <strong>https://</strong> in production environments.
             </p>
             <p className="text-indigo-100/70 text-sm leading-relaxed mb-4">
-              If your app is running behind a Docker container, use the <strong>Public App URL</strong> field to ensure the callback works correctly.
+              Your generated Privacy Policy is automatically served at <code>/privacy</code>.
             </p>
           </div>
 

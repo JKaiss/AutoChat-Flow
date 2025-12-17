@@ -11,6 +11,7 @@ import { ConnectWhatsApp } from './components/ConnectWhatsApp';
 import { ConnectFacebook } from './components/ConnectFacebook';
 import { ConnectedAccounts } from './components/ConnectedAccounts';
 import { Settings } from './components/Settings';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { AuthScreen } from './components/Auth';
 import { LandingPage } from './components/LandingPage';
 import { UpgradeModal } from './components/UpgradeModal';
@@ -23,6 +24,12 @@ const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showLanding, setShowLanding] = useState(true);
+
+  // Simple Path Routing for Privacy Page
+  const path = window.location.pathname;
+  if (path === '/privacy') {
+    return <PrivacyPolicy />;
+  }
 
   useEffect(() => {
     const syncAccounts = async () => {
