@@ -102,7 +102,7 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = () => {
                 </div>
             )}
             <h3 className="text-xl font-bold text-white flex items-center gap-2"><Shield size={20} className={isCurrent('pro') ? "text-green-400" : "text-blue-400"} /> Pro</h3>
-            <div className="text-3xl font-bold text-white my-4">$29 <span className="text-sm font-normal text-slate-500">/mo</span></div>
+            <div className="text-3xl font-bold text-white my-4">$15 <span className="text-sm font-normal text-slate-500">/mo</span></div>
             <ul className="space-y-3 mb-8">
               <li className="flex items-center gap-2 text-sm text-white"><Check size={16} className="text-blue-400" /> 5,000 Transactions</li>
               <li className="flex items-center gap-2 text-sm text-white"><Check size={16} className="text-blue-400" /> 5 Accounts</li>

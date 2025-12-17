@@ -512,7 +512,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
                 <div className="bg-slate-950 p-8 rounded-2xl border-2 border-blue-600 relative transform md:-translate-y-4 shadow-2xl flex flex-col">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white px-4 py-1 rounded-full text-xs font-bold uppercase">Most Popular</div>
                     <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2"><Zap size={18} className="text-blue-500"/> Pro</h3>
-                    <div className="text-4xl font-bold text-white mb-6">$29 <span className="text-sm font-normal text-slate-500">/mo</span></div>
+                    <div className="text-4xl font-bold text-white mb-6">$15 <span className="text-sm font-normal text-slate-500">/mo</span></div>
                     <ul className="space-y-4 mb-8 flex-1">
                         <li className="flex items-center gap-3 text-white text-sm"><Check size={16} className="text-blue-500"/> 5,000 Monthly Actions</li>
                         <li className="flex items-center gap-3 text-white text-sm"><Check size={16} className="text-blue-500"/> 5 Connected Accounts</li>
