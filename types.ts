@@ -100,6 +100,7 @@ export interface ExecutionLog {
 export interface AppSettings {
   metaAppId?: string;
   metaAppSecret?: string;
+  publicUrl?: string;
 }
 
 export interface User {

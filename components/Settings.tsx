@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe } from 'lucide-react';
 import axios from 'axios';
 
 export const Settings: React.FC = () => {
   const [form, setForm] = useState({
     metaAppId: '',
-    metaAppSecret: ''
+    metaAppSecret: '',
+    publicUrl: ''
   });
   const [status, setStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -21,7 +22,11 @@ export const Settings: React.FC = () => {
     try {
       const res = await axios.get('/api/config/status');
       setStatus(res.data);
-      if (res.data.metaAppId) setForm(f => ({ ...f, metaAppId: res.data.metaAppId }));
+      setForm(f => ({ 
+        ...f, 
+        metaAppId: res.data.metaAppId || '',
+        publicUrl: res.data.publicUrl || ''
+      }));
     } catch (e) {
       console.error(e);
     } finally {
@@ -62,27 +67,50 @@ export const Settings: React.FC = () => {
               <Key size={20} className="text-blue-400" /> Meta App Credentials
             </h3>
 
-            <form onSubmit={handleSave} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Facebook App ID</label>
-                <input 
-                  type="text"
-                  value={form.metaAppId}
-                  onChange={e => setForm({...form, metaAppId: e.target.value})}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                  placeholder="e.g. 1029384756"
-                />
+            <form onSubmit={handleSave} className="space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Facebook App ID</label>
+                  <input 
+                    type="text"
+                    value={form.metaAppId}
+                    onChange={e => setForm({...form, metaAppId: e.target.value})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                    placeholder="e.g. 1029384756"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Facebook App Secret</label>
+                  <input 
+                    type="password"
+                    value={form.metaAppSecret}
+                    onChange={e => setForm({...form, metaAppSecret: e.target.value})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                    placeholder="••••••••••••••••"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Facebook App Secret</label>
-                <input 
-                  type="password"
-                  value={form.metaAppSecret}
-                  onChange={e => setForm({...form, metaAppSecret: e.target.value})}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                  placeholder="••••••••••••••••"
-                />
+              <div className="border-t border-slate-700 pt-6">
+                <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                  <Globe size={16} className="text-indigo-400" /> Network Configuration
+                </h4>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                    Public App URL (Recommended for https)
+                  </label>
+                  <input 
+                    type="url"
+                    value={form.publicUrl}
+                    onChange={e => setForm({...form, publicUrl: e.target.value})}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                    placeholder="https://your-domain.com"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-2">
+                    Force the OAuth callback to use this specific URL. Essential if you are behind a proxy that strips SSL headers.
+                  </p>
+                </div>
               </div>
 
               {msg.text && (
@@ -97,7 +125,7 @@ export const Settings: React.FC = () => {
                 disabled={saving}
                 className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all w-full md:w-auto"
               >
-                {saving ? 'Saving...' : <><Save size={18} /> Save Credentials</>}
+                {saving ? 'Saving...' : <><Save size={18} /> Save Settings</>}
               </button>
             </form>
           </div>
@@ -124,15 +152,24 @@ export const Settings: React.FC = () => {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-blue-900/20 border border-blue-800 rounded-2xl p-6">
-            <h3 className="text-blue-200 font-bold mb-4 flex items-center gap-2">
-              <Info size={18} /> Why this matters?
+          <div className="bg-indigo-900/20 border border-indigo-800 rounded-2xl p-6">
+            <h3 className="text-indigo-200 font-bold mb-4 flex items-center gap-2">
+              <Shield size={18} /> HTTPS is Required
             </h3>
-            <p className="text-blue-100/70 text-sm leading-relaxed mb-4">
-              To test real Instagram or Messenger accounts, our server needs to communicate with the Meta Graph API.
+            <p className="text-indigo-100/70 text-sm leading-relaxed mb-4">
+              Meta (Facebook) requires the redirect URL to use <strong>https://</strong> in production environments.
             </p>
-            <p className="text-blue-100/70 text-sm leading-relaxed mb-4">
-              Providing these credentials here bypasses the need for an <code>.env</code> file, allowing real-world testing in containerized environments.
+            <p className="text-indigo-100/70 text-sm leading-relaxed mb-4">
+              If your app is running behind a Docker container, use the <strong>Public App URL</strong> field to ensure the callback works correctly.
+            </p>
+          </div>
+
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
+            <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+              <Info size={18} className="text-slate-400" /> Meta Setup
+            </h3>
+            <p className="text-slate-400 text-xs leading-relaxed mb-4">
+              Ensure you have added your domain to the "Allowed Redirect URIs" in the Meta Developer Portal.
             </p>
             <a 
               href="https://developers.facebook.com/apps" 
@@ -141,15 +178,6 @@ export const Settings: React.FC = () => {
             >
               Go to Meta Developers <ExternalLink size={14} />
             </a>
-          </div>
-
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
-            <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-              <Shield size={18} className="text-slate-400" /> Security
-            </h3>
-            <p className="text-slate-400 text-xs leading-relaxed">
-              These credentials are saved in a local <code>db.json</code> on your server. Ensure your server instance is secure and not accessible by unauthorized users.
-            </p>
           </div>
         </div>
       </div>

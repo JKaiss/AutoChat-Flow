@@ -22,6 +22,11 @@ if (fs.existsSync(rootEnvPath)) {
 }
 
 const app = express();
+
+// --- PROXY FIX ---
+// Essential for Docker/Nginx environments to detect https correctly
+app.set('trust proxy', true);
+
 app.use(cors());
 app.post('/webhook/stripe', bodyParser.raw({ type: 'application/json' }), (req, res) => res.json({received: true}));
 app.use(bodyParser.json());
@@ -46,7 +51,23 @@ function saveDb() {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
-// Config helper that checks process.env OR the database settings
+// Helper to construct redirect URI safely
+const getRedirectUri = (req, path) => {
+    // Priority 1: User-configured Public URL from Settings
+    if (db.settings?.publicUrl) {
+        const base = db.settings.publicUrl.replace(/\/$/, ''); // Remove trailing slash
+        return `${base}${path}`;
+    }
+    
+    // Priority 2: Trust Proxy headers (X-Forwarded-Proto)
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    
+    // Priority 3: Default to https if not on localhost
+    const finalProto = (protocol === 'http' && !req.headers.host.includes('localhost')) ? 'https' : protocol;
+    
+    return `${finalProto}://${req.get('host')}${path}`;
+};
+
 const getMetaConfig = () => ({
     appId: process.env.FACEBOOK_APP_ID || db.settings?.metaAppId,
     appSecret: process.env.FACEBOOK_APP_SECRET || db.settings?.metaAppSecret
@@ -99,13 +120,14 @@ app.get('/api/config/status', (req, res) => {
         metaConfigured: !!(meta.appId && meta.appSecret),
         aiConfigured: !!getGeminiKey(),
         stripeConfigured: !!(CONFIG.STRIPE_KEY && !CONFIG.STRIPE_KEY.includes('placeholder')),
-        metaAppId: meta.appId
+        metaAppId: meta.appId,
+        publicUrl: db.settings?.publicUrl
     });
 });
 
 app.post('/api/config/settings', (req, res) => {
-    const { metaAppId, metaAppSecret } = req.body;
-    db.settings = { ...db.settings, metaAppId, metaAppSecret };
+    const { metaAppId, metaAppSecret, publicUrl } = req.body;
+    db.settings = { ...db.settings, metaAppId, metaAppSecret, publicUrl };
     saveDb();
     res.json({ status: 'ok' });
 });
@@ -150,12 +172,42 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
 
 app.get('/auth/facebook/login', (req, res) => {
     const meta = getMetaConfig();
+    const flow = req.query.flow || 'instagram';
     if (!meta.appId || !meta.appSecret) {
         return res.redirect('/?config_error=missing_meta_keys');
     }
-    const redirectUri = `${req.protocol}://${req.get('host')}/auth/facebook/callback`;
+    
+    // Build redirect URI using helper
+    const callbackPath = flow === 'facebook' ? '/connect-fb' : '/connect-ig';
+    const redirectUri = getRedirectUri(req, callbackPath);
+    
     const scopes = 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages';
-    res.redirect(`https://www.facebook.com/v21.0/dialog/oauth?client_id=${meta.appId}&redirect_uri=${redirectUri}&scope=${scopes}`);
+    const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${meta.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&state=${flow}`;
+    res.redirect(url);
+});
+
+// Generic callback for Meta OAuth
+app.get('/auth/facebook/callback', async (req, res) => {
+    const { code, state } = req.query;
+    const meta = getMetaConfig();
+    if (!meta.appId || !meta.appSecret) return res.status(500).json({ error: 'Config missing' });
+    
+    try {
+        const callbackPath = state === 'facebook' ? '/connect-fb' : '/connect-ig';
+        const redirectUri = getRedirectUri(req, callbackPath);
+
+        const tokenRes = await axios.get('https://graph.facebook.com/v21.0/oauth/access_token', {
+            params: { client_id: meta.appId, client_secret: meta.appSecret, redirect_uri: redirectUri, code }
+        });
+        const userAccessToken = tokenRes.data.access_token;
+        const pagesRes = await axios.get('https://graph.facebook.com/v21.0/me/accounts', {
+            params: { access_token: userAccessToken, fields: 'id,name,access_token,picture,instagram_business_account' }
+        });
+
+        res.json({ pages: pagesRes.data.data });
+    } catch (e) {
+        res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+    }
 });
 
 app.post('/api/register-account', authMiddleware, (req, res) => {
