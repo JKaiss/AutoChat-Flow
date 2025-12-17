@@ -282,7 +282,7 @@ app.post('/api/flow/execute-check', authMiddleware, (req, res) => {
 
 /**
  * REFINED SEND LOGIC
- * Solves the 500 status by ensuring ID types are correct and handling exact Meta error payloads.
+ * Fixes 500 status by ensuring ID types are strictly strings and catching Meta-specific failures.
  */
 const handleSend = async (req, res, platform) => {
     const { to, text, accountId } = req.body;
@@ -294,7 +294,6 @@ const handleSend = async (req, res, platform) => {
         let body = {};
         
         if (platform === 'facebook' || platform === 'instagram') {
-            // Use query string for token for maximum compatibility
             url = `https://graph.facebook.com/v21.0/me/messages?access_token=${account.accessToken}`;
             body = { 
                 recipient: { id: String(to) }, 
@@ -309,12 +308,17 @@ const handleSend = async (req, res, platform) => {
         const graphRes = await axios.post(url, body);
         res.json({ success: true, message_id: graphRes.data.message_id || graphRes.data.id });
     } catch (e) {
-        // Log details to server console for debugging
-        console.error(`[${platform.toUpperCase()}] SEND ERROR:`, e.response?.data || e.message);
+        console.error(`[${platform.toUpperCase()}] SEND ERROR DETAIL:`, e.response?.data || e.message);
         
-        // Return a 500 with the ACTUAL Meta error message so it's visible in the browser network tab
+        // Pass the full Meta error object back to the client for debugging
         const metaError = e.response?.data?.error?.message || e.message;
-        res.status(500).json({ error: metaError, detail: e.response?.data?.error });
+        const subcode = e.response?.data?.error?.error_subcode;
+        
+        res.status(500).json({ 
+            error: metaError, 
+            subcode: subcode,
+            detail: e.response?.data?.error 
+        });
     }
 };
 

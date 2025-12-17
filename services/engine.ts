@@ -24,8 +24,9 @@ export class AutomationEngine {
    * Updates the authentication token used for polling the backend.
    */
   setToken(token: string | null) {
+      console.debug("[Engine] Token updated:", token ? "Token Present" : "Token Removed");
       this.authToken = token;
-      // If we just got a token and polling should be active, trigger an immediate check
+      // Trigger an immediate poll if we just got a token
       if (token && this.isPolling) {
           this.pollMessages();
       }
@@ -37,11 +38,10 @@ export class AutomationEngine {
 
   startPolling() {
       if (this.isPolling && this.intervalId) return;
-      if (this.intervalId) clearInterval(this.intervalId);
       this.isPolling = true;
       this.broadcastStatus();
       this.pollMessages();
-      this.intervalId = setInterval(() => this.pollMessages(), 8000); // Polling every 8 seconds
+      this.intervalId = setInterval(() => this.pollMessages(), 8000); 
   }
 
   stopPolling() {
@@ -58,10 +58,7 @@ export class AutomationEngine {
   }
 
   public async pollMessages() {
-      if (!this.authToken) {
-          console.debug("[Engine] Polling skipped: No auth token.");
-          return;
-      }
+      if (!this.authToken) return;
 
       try {
           const res = await axios.post('/api/instagram/check-messages', {}, {
@@ -73,7 +70,7 @@ export class AutomationEngine {
               if (!this.processedIds.has(msg.id)) {
                   this.processedIds.add(msg.id);
                   
-                  // Broadcast to UI (Simulator)
+                  // Update UI
                   this.broadcast({
                       id: msg.id, 
                       sender: 'user', 
@@ -83,7 +80,7 @@ export class AutomationEngine {
                       accountId: msg.accountId
                   });
 
-                  // Trigger Automation Logic
+                  // Trigger Logic
                   await this.triggerEvent('instagram_dm', {
                       text: msg.text, 
                       subscriberId: msg.sender.id, 
@@ -94,11 +91,7 @@ export class AutomationEngine {
               }
           }
       } catch (e: any) {
-          if (e.response?.status === 401) {
-              console.warn("[Engine] Polling unauthorized. Waiting for new token.");
-          } else {
-              console.warn("[Engine] Polling cycle error:", e.message);
-          }
+          console.warn("[Engine] Polling error:", e.message);
       } finally {
           if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('engine-heartbeat'));
       }
@@ -112,12 +105,11 @@ export class AutomationEngine {
           });
           return true;
       } catch (e: any) {
-          if (!e.response || e.response.status >= 500) return true;
           if (e.response?.status === 403) {
               window.dispatchEvent(new CustomEvent('trigger-upgrade', { detail: { reason: e.response.data.error } }));
               return false;
           }
-          return true;
+          return true; 
       }
   }
 
@@ -126,7 +118,6 @@ export class AutomationEngine {
 
     let channel: Platform = type.startsWith('whatsapp') ? 'whatsapp' : type.startsWith('messenger') ? 'facebook' : 'instagram';
     
-    // FETCH SENDER ID LOGIC: Always update or create subscriber with real Meta data
     let subscriber = db.getSubscribers().find(s => s.id === rawPayload.subscriberId);
     if (!subscriber) {
       subscriber = { 
@@ -219,11 +210,13 @@ export class AutomationEngine {
   private sendBotMessage(text: string, subscriber: Subscriber, accountId: string) {
     const msg: ChatMessage = { id: crypto.randomUUID(), sender: 'bot', text, timestamp: Date.now(), channel: subscriber.channel, accountId };
     this.broadcast(msg);
+    
     if (accountId !== 'virtual_test_account' && this.authToken) {
+        console.debug(`[Engine] Outgoing ${subscriber.channel} message to ${subscriber.id}`);
         axios.post(`/api/${subscriber.channel}/send`, { to: subscriber.id, text, accountId }, {
             headers: { Authorization: `Bearer ${this.authToken}` }
         }).catch((err) => {
-            console.error("[Engine] Message send failed:", err.message);
+            console.error(`[Engine] ${subscriber.channel} send failed:`, err.response?.data || err.message);
         });
     }
   }
