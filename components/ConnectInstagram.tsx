@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
 import { Account } from '../types';
-import { Instagram, AlertCircle, ShieldAlert, Sparkles, Trash2, CheckCircle, WifiOff, Loader, HelpCircle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Instagram, AlertCircle, ShieldAlert, Sparkles, Trash2, CheckCircle, WifiOff, Loader, HelpCircle, AlertTriangle, RefreshCw, Key } from 'lucide-react';
 import axios from 'axios';
 
 export const ConnectInstagram: React.FC = () => {
@@ -254,29 +254,36 @@ export const ConnectInstagram: React.FC = () => {
           {accounts.some(a => a.status === 'error') && (
               <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl animate-in slide-in-from-top-2 duration-300">
                   <h4 className="text-xs font-bold text-red-300 uppercase mb-2 flex items-center gap-2">
-                      <HelpCircle size={14} /> Troubleshooting Fatal Error
+                      <HelpCircle size={14} /> Critical Polling Error
                   </h4>
                   <p className="text-[10px] text-slate-300 mb-3">
-                      The current connection is blocked by Instagram privacy settings. Follow these steps:
+                      The Meta API is returning a 'Fatal' status. Follow this checklist to restore polling:
                   </p>
-                  <ol className="text-[10px] text-slate-400 space-y-2 list-decimal pl-4">
-                      <li>Open the <strong>Instagram App</strong> on your phone.</li>
-                      <li>Go to <strong>Settings & Privacy</strong> &gt; <strong>Messages and story replies</strong>.</li>
-                      <li>Tap <strong>Message controls</strong>.</li>
-                      <li>Under 'Connected tools', toggle <strong>"Allow Access to Messages"</strong> to <strong>ON</strong>.</li>
-                      <li>Click the <strong>Refresh</strong> icon on the account above.</li>
-                  </ol>
+                  <ul className="text-[10px] text-slate-400 space-y-2 list-disc pl-4">
+                      <li>
+                          <strong>Check Privacy Toggle:</strong> In the Instagram App (Mobile), go to <em>Settings & Privacy &gt; Messages and story replies &gt; Message controls</em>. Enable <strong>"Allow Access to Messages"</strong>.
+                      </li>
+                      <li>
+                          <strong>App Roles (Testers):</strong> Ensure the Instagram user is added to the <strong>Testers</strong> role in your Meta App Dashboard (App Roles &gt; Testers).
+                      </li>
+                      <li>
+                          <strong>Permissions:</strong> Ensure you granted <em>instagram_manage_messages</em> during the login. Click the Refresh icon above to re-sync.
+                      </li>
+                      <li>
+                          <strong>Business Verification:</strong> Confirm your Instagram account is linked to a Facebook Page and is set as a <strong>Business</strong> (not Creator) account.
+                      </li>
+                  </ul>
               </div>
           )}
 
           <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 mt-4">
               <h4 className="text-xs font-bold text-slate-400 uppercase mb-4 flex items-center gap-2">
-                  <HelpCircle size={14} /> Connection Guide
+                  <Key size={14} /> Connection Guide
               </h4>
               <ul className="text-[11px] text-slate-500 space-y-3 list-disc pl-4">
                   <li>Your Instagram must be a <b>Business Account</b>.</li>
-                  <li>Ensure "Allow Access to Messages" is ON in your IG mobile app.</li>
                   <li>Linked Facebook Pages must be managed by your Meta account.</li>
+                  <li>For Apps in <b>Development Mode</b>, you must manually add Tester roles.</li>
               </ul>
           </div>
         </div>

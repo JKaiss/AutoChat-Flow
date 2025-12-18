@@ -248,14 +248,14 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
             }
         } catch (e) {
             const errData = e.response?.data?.error;
-            // Enhanced logging to stderr for Cloud Run visibility
+            // Enhanced logging to stderr for Cloud Run visibility - includes FB Trace ID
             process.stderr.write(`[POLLING FAILED] Account: ${acc.name} - Reason: ${JSON.stringify(errData || e.message)}\n`);
             
             acc.status = 'error';
             acc.lastChecked = Date.now();
             
-            if (errData?.error_subcode === 2207085) {
-                acc.lastError = "Access Denied: Enable 'Allow Access to Messages' in Instagram App settings.";
+            if (errData?.error_subcode === 2207085 || errData?.code === -1) {
+                acc.lastError = `Access Denied (Subcode 2207085). Ensure 'Allow Access to Messages' is ON in IG Settings. Trace: ${errData?.fbtrace_id || 'N/A'}`;
             } else {
                 acc.lastError = errData?.message || e.message;
             }
@@ -318,7 +318,7 @@ const handleSend = async (req, res, platform) => {
         // If we hit the Fatal Permission error during a send, update account status
         if (subcode === 2207085) {
             account.status = 'error';
-            account.lastError = "Access Denied: Enable 'Allow Access to Messages' in Instagram App settings.";
+            account.lastError = `Access Denied (Subcode 2207085). Check Instagram Privacy Settings. Trace: ${metaErrorObj?.fbtrace_id || 'N/A'}`;
             saveDb();
         }
 
