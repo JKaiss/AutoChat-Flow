@@ -267,13 +267,13 @@ export const ConnectInstagram: React.FC = () => {
                   </p>
                   <ol className="text-[10px] text-slate-400 space-y-3 list-decimal pl-4">
                       <li>
-                          <strong>The Privacy Toggle:</strong> Open the <strong>Instagram App</strong> on your phone. Go to <em>Settings & Privacy > Messages and story replies > Message controls</em>. At the bottom, enable <strong>"Allow Access to Messages"</strong>. This is the most common fix.
+                          <strong>The Privacy Toggle:</strong> Open the <strong>Instagram App</strong> on your phone. Go to <em>Settings & Privacy &gt; Messages and story replies &gt; Message controls</em>. At the bottom, enable <strong>"Allow Access to Messages"</strong>. This is the most common fix.
                       </li>
                       <li>
                           <strong>Business Roles:</strong> Ensure your Meta account has the <strong>Admin</strong> role on the linked Facebook Page.
                       </li>
                       <li>
-                          <strong>App Role (Testers):</strong> Since your app is in development, you must manually add the user account to the <strong>Testers</strong> role in the <em>Meta Developer Portal > App Roles > Testers</em>.
+                          <strong>App Role (Testers):</strong> Since your app is in development, you must manually add the user account to the <strong>Testers</strong> role in the <em>Meta Developer Portal &gt; App Roles &gt; Testers</em>.
                       </li>
                       <li>
                           <strong>Account Type:</strong> Verify your Instagram account is a <strong>Business</strong> account, not a personal or creator account.
