@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
 import { Account } from '../types';
-import { Instagram, AlertCircle, ShieldAlert, Sparkles, Trash2, CheckCircle, WifiOff, Loader, HelpCircle, AlertTriangle, RefreshCw, Key } from 'lucide-react';
+import { Instagram, AlertCircle, ShieldAlert, Sparkles, Trash2, CheckCircle, WifiOff, Loader, HelpCircle, AlertTriangle, RefreshCw, Key, Copy, Check } from 'lucide-react';
 import axios from 'axios';
 
 export const ConnectInstagram: React.FC = () => {
@@ -12,6 +11,7 @@ export const ConnectInstagram: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const authProcessed = useRef(false);
 
   const fetchAccounts = () => {
@@ -114,10 +114,16 @@ export const ConnectInstagram: React.FC = () => {
     setAccounts(db.getAccountsByPlatform('instagram'));
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(text);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
   if (isLoading) return <div className="p-8 text-slate-500">Loading Configuration...</div>;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-8 max-w-4xl mx-auto h-full overflow-y-auto">
       <header className="mb-8">
         <h2 className="text-2xl font-bold text-white flex items-center gap-3">
           <Instagram className="text-pink-500" /> Instagram Business
@@ -145,8 +151,8 @@ export const ConnectInstagram: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div className="bg-slate-800 border border-slate-700 p-8 rounded-2xl flex flex-col">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-20">
+        <div className="bg-slate-800 border border-slate-700 p-8 rounded-2xl flex flex-col h-fit">
           <h3 className="font-bold text-white mb-6 flex items-center gap-2">
             <Instagram size={20} className="text-pink-400" /> Connect via OAuth
           </h3>
@@ -212,9 +218,9 @@ export const ConnectInstagram: React.FC = () => {
             </div>
           )}
           {accounts.map(acc => (
-            <div key={acc.id} className={`bg-slate-800 border p-5 rounded-2xl flex items-center justify-between group transition-all ${acc.status === 'error' ? 'border-red-500/50' : 'border-slate-700 hover:border-pink-500/30'}`}>
+            <div key={acc.id} className={`bg-slate-800 border p-5 rounded-2xl flex items-center justify-between group transition-all ${acc.status === 'error' ? 'border-red-500/50 shadow-lg shadow-red-900/10' : 'border-slate-700 hover:border-pink-500/30'}`}>
               <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white border-2 border-slate-700 overflow-hidden shrink-0 ${acc.status === 'error' ? 'grayscale' : ''}`}>
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white border-2 border-slate-700 overflow-hidden shrink-0 ${acc.status === 'error' ? 'grayscale border-red-500/50' : ''}`}>
                   {acc.profilePictureUrl ? <img src={acc.profilePictureUrl} className="w-full h-full object-cover" /> : acc.name.charAt(0)}
                 </div>
                 <div>
@@ -228,7 +234,7 @@ export const ConnectInstagram: React.FC = () => {
                   </h4>
                   {acc.status === 'error' ? (
                       <p className="text-[10px] text-red-400 font-medium mt-1 leading-tight max-w-[180px]">
-                          {acc.lastError || "Configuration required"}
+                          {acc.lastError || "Polling blocked by Meta"}
                       </p>
                   ) : (
                       <p className="text-[10px] text-slate-500 font-mono mt-1">IGID: {acc.externalId}</p>
@@ -254,36 +260,41 @@ export const ConnectInstagram: React.FC = () => {
           {accounts.some(a => a.status === 'error') && (
               <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl animate-in slide-in-from-top-2 duration-300">
                   <h4 className="text-xs font-bold text-red-300 uppercase mb-2 flex items-center gap-2">
-                      <HelpCircle size={14} /> Critical Polling Error
+                      <HelpCircle size={14} /> Resolving "Fatal Error" (2207085)
                   </h4>
                   <p className="text-[10px] text-slate-300 mb-3">
-                      The Meta API is returning a 'Fatal' status. Follow this checklist to restore polling:
+                      This error occurs because Instagram's privacy settings block our application from reading your messages.
                   </p>
-                  <ul className="text-[10px] text-slate-400 space-y-2 list-disc pl-4">
+                  <ol className="text-[10px] text-slate-400 space-y-3 list-decimal pl-4">
                       <li>
-                          <strong>Check Privacy Toggle:</strong> In the Instagram App (Mobile), go to <em>Settings & Privacy &gt; Messages and story replies &gt; Message controls</em>. Enable <strong>"Allow Access to Messages"</strong>.
+                          <strong>The Privacy Toggle:</strong> Open the <strong>Instagram App</strong> on your phone. Go to <em>Settings & Privacy > Messages and story replies > Message controls</em>. At the bottom, enable <strong>"Allow Access to Messages"</strong>. This is the most common fix.
                       </li>
                       <li>
-                          <strong>App Roles (Testers):</strong> Ensure the Instagram user is added to the <strong>Testers</strong> role in your Meta App Dashboard (App Roles &gt; Testers).
+                          <strong>Business Roles:</strong> Ensure your Meta account has the <strong>Admin</strong> role on the linked Facebook Page.
                       </li>
                       <li>
-                          <strong>Permissions:</strong> Ensure you granted <em>instagram_manage_messages</em> during the login. Click the Refresh icon above to re-sync.
+                          <strong>App Role (Testers):</strong> Since your app is in development, you must manually add the user account to the <strong>Testers</strong> role in the <em>Meta Developer Portal > App Roles > Testers</em>.
                       </li>
                       <li>
-                          <strong>Business Verification:</strong> Confirm your Instagram account is linked to a Facebook Page and is set as a <strong>Business</strong> (not Creator) account.
+                          <strong>Account Type:</strong> Verify your Instagram account is a <strong>Business</strong> account, not a personal or creator account.
                       </li>
-                  </ul>
+                  </ol>
+                  <div className="mt-4 pt-3 border-t border-red-500/20">
+                      <p className="text-[9px] text-red-400/70 italic">
+                          After completing these steps, click the <b>Refresh icon</b> on the account above to re-sync.
+                      </p>
+                  </div>
               </div>
           )}
 
           <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 mt-4">
               <h4 className="text-xs font-bold text-slate-400 uppercase mb-4 flex items-center gap-2">
-                  <Key size={14} /> Connection Guide
+                  <Key size={14} /> Connection Requirements
               </h4>
               <ul className="text-[11px] text-slate-500 space-y-3 list-disc pl-4">
-                  <li>Your Instagram must be a <b>Business Account</b>.</li>
-                  <li>Linked Facebook Pages must be managed by your Meta account.</li>
-                  <li>For Apps in <b>Development Mode</b>, you must manually add Tester roles.</li>
+                  <li>Your Instagram must be linked to a Facebook Page.</li>
+                  <li>"Allow Access to Messages" must be <b>ON</b> in the mobile app.</li>
+                  <li>Meta App must have <code>instagram_manage_messages</code> permission.</li>
               </ul>
           </div>
         </div>
