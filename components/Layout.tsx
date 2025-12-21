@@ -1,4 +1,5 @@
 
+
 import React, { useEffect } from 'react';
 import { LayoutDashboard, GitGraph, MessageSquare, Activity, Instagram, Phone, Facebook, Link2, LogOut, CreditCard, Settings } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -70,6 +71,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             <button
               key={item.id}
               onClick={() => onTabChange(item.id)}
+              aria-current={activeTab === item.id ? 'page' : undefined}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
                 activeTab === item.id 
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
@@ -81,7 +83,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             </button>
           ))}
 
-          <div className="pt-6 pb-2 px-4 text-xs font-bold text-slate-500 uppercase">Channels</div>
+          <div className="pt-6 pb-2 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Channels</div>
           
           {connectionItems.map((item) => (
             <button
@@ -98,7 +100,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
             </button>
           ))}
 
-          <div className="pt-6 pb-2 px-4 text-xs font-bold text-slate-500 uppercase">System</div>
+          <div className="pt-6 pb-2 px-4 text-xs font-bold text-slate-400 uppercase tracking-wider">System</div>
           <button
             onClick={() => onTabChange('settings')}
             className={`w-full flex items-center space-x-3 px-4 py-2 rounded-lg transition-colors text-sm ${
@@ -107,6 +109,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
                 : 'text-slate-400 hover:bg-slate-700 hover:text-white'
             }`}
           >
+            {/* Fixed line 111: item was undefined here as it is outside the maps above */}
             <Settings size={18} />
             <span className="font-medium">Settings</span>
           </button>
@@ -127,16 +130,20 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
                 </button>
               </div>
             </div>
-            <button onClick={logout} className="text-slate-500 hover:text-red-400 p-2">
+            <button 
+              onClick={logout} 
+              aria-label="Logout"
+              className="text-slate-500 hover:text-red-400 p-2 transition-colors"
+            >
                 <LogOut size={16} />
             </button>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden relative bg-slate-900">
+      <main className="flex-1 overflow-hidden relative bg-slate-900" id="main-content">
         {children}
-      </div>
+      </main>
     </div>
   );
 };

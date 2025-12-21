@@ -1,4 +1,5 @@
 
+
 import { db } from "./db";
 import { Flow, Subscriber, FlowNode, ChatMessage, TriggerType, Platform } from "../types";
 import { GoogleGenAI } from "@google/genai";
@@ -14,7 +15,8 @@ export class AutomationEngine {
   private intervalId: any = null;
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+    // Correctly initialize with process.env.API_KEY directly as per guidelines
+    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     if (typeof window !== 'undefined') {
         (window as any).automationEngine = this;
     }
@@ -195,12 +197,13 @@ export class AutomationEngine {
         return undefined;
       case 'ai_generate':
          const prompt = `${node.data.aiPrompt || "Greet user"}\n\nContext: ${input || "User started flow"}`;
-         const result = await this.ai.models.generateContent({
+         // Calling generateContent with correct SDK patterns and text property access
+         const response = await this.ai.models.generateContent({
              model: 'gemini-3-flash-preview',
              contents: prompt,
              config: { systemInstruction: `Friendly assistant for ${subscriber.username}. Max 300 chars.` }
          });
-         this.sendBotMessage(result.text || "...", subscriber, accountId);
+         this.sendBotMessage(response.text || "...", subscriber, accountId);
          return node.nextId;
       default: return node.nextId;
     }

@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
@@ -66,8 +67,6 @@ const getMetaConfig = () => ({
     appSecret: process.env.FACEBOOK_APP_SECRET || db.settings?.metaAppSecret
 });
 
-const getGeminiKey = () => process.env.API_KEY || db.settings?.geminiKey;
-
 const CONFIG = {
     PORT: process.env.PORT || 3000,
     JWT_SECRET: process.env.JWT_SECRET || 'dev_secret_key_123',
@@ -111,7 +110,8 @@ app.get('/api/config/status', (req, res) => {
     const meta = getMetaConfig();
     res.json({
         metaConfigured: !!(meta.appId && meta.appSecret),
-        aiConfigured: !!getGeminiKey(),
+        // Use process.env.API_KEY exclusively for AI configuration status
+        aiConfigured: !!process.env.API_KEY,
         stripeConfigured: !!(CONFIG.STRIPE_KEY && !CONFIG.STRIPE_KEY.includes('placeholder')),
         metaAppId: meta.appId,
         publicUrl: db.settings?.publicUrl
@@ -147,6 +147,12 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
     const usage = getUsage(req.user.id);
     const plan = CONFIG.PLANS[req.user.plan] || CONFIG.PLANS.free;
     res.json({ user: req.user, usage: { ...usage, limit: plan.limit, aiEnabled: plan.ai, maxAccounts: plan.accounts } });
+});
+
+// --- SEO ROUTES ---
+app.get('/robots.txt', (req, res) => {
+    res.type('text/plain');
+    res.send("User-agent: *\nDisallow: /api/\nDisallow: /auth/\nSitemap: " + (db.settings?.publicUrl || 'https://autochat.com') + "/sitemap.xml");
 });
 
 // --- META OAUTH ---
@@ -336,24 +342,31 @@ app.post('/api/instagram/send', authMiddleware, (req, res) => handleSend(req, re
 app.post('/api/whatsapp/send', authMiddleware, (req, res) => handleSend(req, res, 'whatsapp'));
 
 app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => {
-    const apiKey = getGeminiKey();
+    // Exclusively use process.env.API_KEY
+    const apiKey = process.env.API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'AI_KEY_MISSING' });
     try {
         const ai = new GoogleGenAI({ apiKey });
+        // Using 'gemini-3-pro-preview' for complex structural reasoning tasks like flow generation
         const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-3-pro-preview',
             contents: req.body.prompt,
             config: { responseMimeType: 'application/json' }
         });
-        res.json({ nodes: JSON.parse(response.text) });
-    } catch (e) { res.status(500).json({ error: 'AI failed' }); }
+        // Correctly accessing .text property of GenerateContentResponse
+        const textOutput = response.text || '[]';
+        res.json({ nodes: JSON.parse(textOutput) });
+    } catch (e) { 
+        console.error("AI Generation Error:", e);
+        res.status(500).json({ error: 'AI failed' }); 
+    }
 });
 
 const distPath = path.resolve(__dirname, '../dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api') && !req.path.startsWith('/auth')) {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/auth') && req.path !== '/robots.txt') {
             res.sendFile(path.join(distPath, 'index.html'));
         }
     });
