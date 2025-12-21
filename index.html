@@ -5,9 +5,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="AutoChat Flow - The ultimate multi-channel chatbot automation platform for Instagram, WhatsApp, and Messenger." />
+    <link rel="preconnect" href="https://esm.sh" />
     <title>AutoChat Flow MVP</title>
-    <!-- Tailwind via CDN for simplicity in MVP -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind via CDN with defer logic -->
+    <script src="https://cdn.tailwindcss.com" defer></script>
     <style>
       /* Custom scrollbar for simulator */
       .scrollbar-hide::-webkit-scrollbar {
@@ -17,6 +18,8 @@
           -ms-overflow-style: none;
           scrollbar-width: none;
       }
+      /* Prevent FOUC (Flash of Unstyled Content) */
+      [opacity-0] { opacity: 0; }
     </style>
 <script type="importmap">
 {
@@ -28,26 +31,25 @@
     "lucide-react": "https://esm.sh/lucide-react@^0.559.0",
     "recharts": "https://esm.sh/recharts@^3.5.1",
     "axios": "https://esm.sh/axios@^1.13.2",
-    "path": "https://esm.sh/path@^0.12.7",
     "express": "https://esm.sh/express@^5.2.1",
-    "cors": "https://esm.sh/cors@^2.8.5",
-    "fs": "https://esm.sh/fs@^0.0.1-security",
     "body-parser": "https://esm.sh/body-parser@^2.2.1",
+    "cors": "https://esm.sh/cors@^2.8.5",
+    "path": "https://esm.sh/path@^0.12.7",
+    "fs": "https://esm.sh/fs@^0.0.1-security",
     "url": "https://esm.sh/url@^0.11.4",
     "dotenv": "https://esm.sh/dotenv@^17.2.3",
-    "vite": "https://esm.sh/vite@^7.3.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "jsonwebtoken": "https://esm.sh/jsonwebtoken@^9.0.3",
-    "crypto": "https://esm.sh/crypto@^1.0.1",
     "bcryptjs": "https://esm.sh/bcryptjs@^3.0.3",
-    "stripe": "https://esm.sh/stripe@^20.1.0"
+    "stripe": "https://esm.sh/stripe@^20.1.0",
+    "crypto": "https://esm.sh/crypto@^1.0.1",
+    "vite": "https://esm.sh/vite@^7.3.0",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
   <body class="bg-slate-900 text-slate-100 antialiased overflow-hidden">
     <div id="root" class="h-screen w-screen flex flex-col"></div>
-    <!-- Entry point moved to end of body for reliability -->
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

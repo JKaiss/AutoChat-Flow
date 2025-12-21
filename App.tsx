@@ -1,35 +1,42 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
-import { Dashboard } from './components/Dashboard';
-import { FlowBuilder } from './components/FlowBuilder';
-import { Simulator } from './components/Simulator';
-import { Logs } from './components/Logs';
-import { ConnectInstagram } from './components/ConnectInstagram';
-import { ConnectWhatsApp } from './components/ConnectWhatsApp';
-import { ConnectFacebook } from './components/ConnectFacebook';
-import { ConnectedAccounts } from './components/ConnectedAccounts';
-import { Settings } from './components/Settings';
-import { PrivacyPolicy } from './components/PrivacyPolicy';
-import { AuthScreen } from './components/Auth';
-import { LandingPage } from './components/LandingPage';
-import { UpgradeModal } from './components/UpgradeModal';
 import { Loader } from 'lucide-react';
 import { db } from './services/db';
 import { engine } from './services/engine';
 import axios from 'axios';
+
+// Lazy load heavy components to improve TBT and FCP
+const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+const FlowBuilder = lazy(() => import('./components/FlowBuilder').then(m => ({ default: m.FlowBuilder })));
+const Simulator = lazy(() => import('./components/Simulator').then(m => ({ default: m.Simulator })));
+const Logs = lazy(() => import('./components/Logs').then(m => ({ default: m.Logs })));
+const ConnectInstagram = lazy(() => import('./components/ConnectInstagram').then(m => ({ default: m.ConnectInstagram })));
+const ConnectWhatsApp = lazy(() => import('./components/ConnectWhatsApp').then(m => ({ default: m.ConnectWhatsApp })));
+const ConnectFacebook = lazy(() => import('./components/ConnectFacebook').then(m => ({ default: m.ConnectFacebook })));
+const ConnectedAccounts = lazy(() => import('./components/ConnectedAccounts').then(m => ({ default: m.ConnectedAccounts })));
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const PrivacyPolicy = lazy(() => import('./components/PrivacyPolicy').then(m => ({ default: m.PrivacyPolicy })));
+const AuthScreen = lazy(() => import('./components/Auth').then(m => ({ default: m.AuthScreen })));
+const LandingPage = lazy(() => import('./components/LandingPage').then(m => ({ default: m.LandingPage })));
+const UpgradeModal = lazy(() => import('./components/UpgradeModal').then(m => ({ default: m.UpgradeModal })));
+
+const TabLoader = () => (
+  <div className="h-full w-full flex flex-col items-center justify-center text-slate-500 gap-4">
+    <Loader className="animate-spin text-blue-500" size={32} />
+    <span className="text-sm font-medium animate-pulse">Loading Module...</span>
+  </div>
+);
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showLanding, setShowLanding] = useState(true);
 
-  // Simple Path Routing for Privacy Page & OAuth Redirects
   const path = window.location.pathname;
 
   useEffect(() => {
-    // Detect path for internal routing to specific tabs (important for OAuth callbacks)
     if (path === '/connect-fb') setActiveTab('connect-fb');
     else if (path === '/connect-ig') setActiveTab('connect-ig');
     else if (path === '/settings') setActiveTab('settings');
@@ -40,7 +47,7 @@ const AppContent: React.FC = () => {
   }, [path]);
 
   if (path === '/privacy') {
-    return <PrivacyPolicy />;
+    return <Suspense fallback={<div className="h-screen bg-slate-950" />}><PrivacyPolicy /></Suspense>;
   }
 
   useEffect(() => {
@@ -59,7 +66,7 @@ const AppContent: React.FC = () => {
             }
         }
     };
-    if (user) {
+    if (user && user.id !== 'offline_user') {
         syncAccounts();
     }
   }, [user]);
@@ -77,24 +84,31 @@ const AppContent: React.FC = () => {
   }
 
   if (!user) {
-    if (showLanding) {
-      return <LandingPage onGetStarted={() => setShowLanding(false)} />;
-    }
-    return <AuthScreen onBack={() => setShowLanding(true)} />;
+    return (
+      <Suspense fallback={<div className="h-screen w-screen bg-slate-950" />}>
+        {showLanding ? (
+          <LandingPage onGetStarted={() => setShowLanding(false)} />
+        ) : (
+          <AuthScreen onBack={() => setShowLanding(true)} />
+        )}
+      </Suspense>
+    );
   }
 
   return (
     <Layout activeTab={activeTab} onTabChange={setActiveTab}>
-      <UpgradeModal />
-      {activeTab === 'dashboard' && <Dashboard />}
-      {activeTab === 'flows' && <FlowBuilder />}
-      {activeTab === 'simulator' && <Simulator />}
-      {activeTab === 'logs' && <Logs />}
-      {activeTab === 'connections' && <ConnectedAccounts />}
-      {activeTab === 'connect-ig' && <ConnectInstagram />}
-      {activeTab === 'connect-wa' && <ConnectWhatsApp />}
-      {activeTab === 'connect-fb' && <ConnectFacebook />}
-      {activeTab === 'settings' && <Settings />}
+      <Suspense fallback={<TabLoader />}>
+        <UpgradeModal />
+        {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'flows' && <FlowBuilder />}
+        {activeTab === 'simulator' && <Simulator />}
+        {activeTab === 'logs' && <Logs />}
+        {activeTab === 'connections' && <ConnectedAccounts />}
+        {activeTab === 'connect-ig' && <ConnectInstagram />}
+        {activeTab === 'connect-wa' && <ConnectWhatsApp />}
+        {activeTab === 'connect-fb' && <ConnectFacebook />}
+        {activeTab === 'settings' && <Settings />}
+      </Suspense>
     </Layout>
   );
 }
