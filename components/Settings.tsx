@@ -49,12 +49,12 @@ export const Settings: React.FC = () => {
     try {
       const res = await axios.get('/api/config/status');
       setStatus(res.data);
-      setForm(f => ({ 
-        ...f, 
+      setForm({ 
         metaAppId: res.data.metaAppId || '',
+        metaAppSecret: res.data.metaAppSecret || '',
         publicUrl: res.data.publicUrl || '',
         webhookVerifyToken: res.data.verifyToken || 'autochat_verify_token'
-      }));
+      });
     } catch (e) {
       console.error(e);
     } finally {

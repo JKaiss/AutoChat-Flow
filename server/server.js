@@ -115,9 +115,10 @@ app.get('/api/config/status', (req, res) => {
         metaConfigured: !!(meta.appId && meta.appSecret),
         aiConfigured: !!process.env.API_KEY,
         stripeConfigured: !!(CONFIG.STRIPE_KEY && !CONFIG.STRIPE_KEY.includes('placeholder')),
-        metaAppId: meta.appId,
-        publicUrl: db.settings?.publicUrl,
-        verifyToken: meta.verifyToken
+        metaAppId: meta.appId || '',
+        metaAppSecret: meta.appSecret || '', // Return secret so form is populated
+        publicUrl: db.settings?.publicUrl || '',
+        verifyToken: meta.verifyToken || 'autochat_verify_token'
     });
 });
 
