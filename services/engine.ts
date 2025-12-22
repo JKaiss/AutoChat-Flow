@@ -6,7 +6,6 @@ import axios from 'axios';
 
 export class AutomationEngine {
   private listeners: ((msg: ChatMessage) => void)[] = [];
-  private ai: GoogleGenAI | null = null;
   private pausedStates = new Map<string, { flowId: string, nextNodeId: string, variable: string }>();
   private processedIds = new Set<string>();
   private authToken: string | null = null;
@@ -14,13 +13,6 @@ export class AutomationEngine {
   private intervalId: any = null;
 
   constructor() {
-    const apiKey = process.env.API_KEY;
-    if (apiKey) {
-      this.ai = new GoogleGenAI({ apiKey });
-    } else {
-      console.warn("[Engine] No API Key found. AI features will be disabled.");
-    }
-    
     if (typeof window !== 'undefined') {
         (window as any).automationEngine = this;
     }
@@ -193,17 +185,25 @@ export class AutomationEngine {
         if (node.nextId && node.data.variable) this.pausedStates.set(subscriber.id, { flowId, nextNodeId: node.nextId, variable: node.data.variable });
         return undefined;
       case 'ai_generate':
-         if (!this.ai) {
-           this.sendBotMessage("[AI Disabled: Missing Key]", subscriber, accountId);
+         const apiKey = process.env.API_KEY;
+         if (!apiKey) {
+           this.sendBotMessage("[AI Disabled: Missing API Key in Settings]", subscriber, accountId);
            return node.nextId;
          }
-         const prompt = `${node.data.aiPrompt || "Greet user"}\n\nContext: ${input || "User started flow"}`;
-         const response = await this.ai.models.generateContent({
-             model: 'gemini-3-flash-preview',
-             contents: prompt,
-             config: { systemInstruction: `Friendly assistant for ${subscriber.username}. Max 300 chars.` }
-         });
-         this.sendBotMessage(response.text || "...", subscriber, accountId);
+         
+         try {
+           const ai = new GoogleGenAI({ apiKey });
+           const prompt = `${node.data.aiPrompt || "Greet user"}\n\nContext: ${input || "User started flow"}`;
+           const response = await ai.models.generateContent({
+               model: 'gemini-3-flash-preview',
+               contents: prompt,
+               config: { systemInstruction: `Friendly assistant for ${subscriber.username}. Max 300 chars.` }
+           });
+           this.sendBotMessage(response.text || "...", subscriber, accountId);
+         } catch (aiErr: any) {
+           console.error("[Engine] AI Generation failed:", aiErr);
+           this.sendBotMessage("[AI Error: Failed to generate reply]", subscriber, accountId);
+         }
          return node.nextId;
       default: return node.nextId;
     }
