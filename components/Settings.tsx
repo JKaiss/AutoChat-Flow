@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe, FileText, Copy, Terminal } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe, FileText, Copy, Terminal, Sparkles, Bot, CreditCard } from 'lucide-react';
 import axios from 'axios';
 
 export const Settings: React.FC = () => {
@@ -14,10 +14,36 @@ export const Settings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
+  const [hasAiKey, setHasAiKey] = useState(false);
 
   useEffect(() => {
     fetchStatus();
+    checkAiKeyStatus();
   }, []);
+
+  const checkAiKeyStatus = async () => {
+    try {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setHasAiKey(hasKey);
+      }
+    } catch (e) {
+      console.error("Failed to check AI key status", e);
+    }
+  };
+
+  const handleSelectAiKey = async () => {
+    try {
+      if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+        await window.aistudio.openSelectKey();
+        // Per instructions: assume success and proceed
+        setHasAiKey(true);
+        fetchStatus(); // Refresh status from backend to see if it's picked up
+      }
+    } catch (e) {
+      console.error("Failed to open key selector", e);
+    }
+  };
 
   const fetchStatus = async () => {
     try {
@@ -67,11 +93,57 @@ export const Settings: React.FC = () => {
         <h2 className="text-2xl font-bold text-white flex items-center gap-3">
           <SettingsIcon className="text-slate-400" /> Platform Settings
         </h2>
-        <p className="text-slate-400 mt-2">Manage your API credentials and platform configuration.</p>
+        <p className="text-slate-400 mt-2">Manage your API credentials, AI engine, and platform configuration.</p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-6">
+          
+          {/* --- GEMINI AI SECTION --- */}
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl p-6 shadow-xl relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+               <Sparkles size={80} className="text-purple-500" />
+            </div>
+            
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Sparkles size={20} className="text-purple-400" /> Gemini AI Engine
+            </h3>
+            
+            <p className="text-slate-400 text-sm mb-6 leading-relaxed">
+              Power your automations with Google's most capable AI models. Select a paid API key to enable Flow Generation and Intelligent Replies.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+               <button 
+                  onClick={handleSelectAiKey}
+                  className="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20 transition-all active:scale-95"
+               >
+                  <Key size={18} /> {hasAiKey ? 'Change Gemini API Key' : 'Select Gemini API Key'}
+               </button>
+               
+               <div className="flex items-center gap-2 px-4 py-3 bg-slate-950/50 rounded-xl border border-slate-700/50 w-full sm:w-auto">
+                  <div className={`w-2 h-2 rounded-full ${status?.aiConfigured || hasAiKey ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+                  <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                     Status: {status?.aiConfigured || hasAiKey ? 'Configured' : 'Missing Key'}
+                  </span>
+               </div>
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-slate-700/50">
+               <a 
+                 href="https://ai.google.dev/gemini-api/docs/billing" 
+                 target="_blank" 
+                 rel="noopener noreferrer"
+                 className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-2 transition-colors font-medium"
+               >
+                 <CreditCard size={14} /> View Billing Requirements & Pricing <ExternalLink size={12} />
+               </a>
+               <p className="text-[10px] text-slate-500 mt-2">
+                 Selection of a key from a paid Google Cloud project is mandatory for high-tier model access.
+               </p>
+            </div>
+          </div>
+
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
             <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
               <Key size={20} className="text-blue-400" /> Meta App Credentials
