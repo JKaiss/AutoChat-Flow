@@ -31,7 +31,7 @@ app.post('/webhook/stripe', bodyParser.raw({ type: 'application/json' }), (req, 
 app.use(bodyParser.json());
 
 const DB_FILE = path.resolve(__dirname, 'db.json');
-const defaultDb = { users: [], subscriptions: [], usage: [], accounts: [], settings: {} };
+const defaultDb = { users: [], subscriptions: [], usage: [], accounts: [], settings: {}, incoming_events: [] };
 let db = { ...defaultDb };
 
 function loadDb() {
@@ -39,6 +39,8 @@ function loadDb() {
         try {
             const rawData = fs.readFileSync(DB_FILE, 'utf8');
             db = rawData.trim() ? { ...defaultDb, ...JSON.parse(rawData) } : { ...defaultDb };
+            // Ensure incoming_events exists for older db versions
+            if (!db.incoming_events) db.incoming_events = [];
         } catch (e) {
             db = { ...defaultDb };
         }
@@ -150,7 +152,17 @@ app.post('/api/webhook', (req, res) => {
             const webhook_event = entry.messaging?.[0];
             if (webhook_event && webhook_event.message) {
                 console.log('[WEBHOOK] Incoming message from:', webhook_event.sender.id);
-                // In a real app, this would emit to a socket or push to a queue for the automation engine
+                // Store event for the engine to pick up (Simulated real-time)
+                db.incoming_events.push({
+                    id: webhook_event.message.mid || crypto.randomUUID(),
+                    text: webhook_event.message.text,
+                    timestamp: entry.time || Date.now(),
+                    accountId: entry.id,
+                    senderId: webhook_event.sender.id,
+                    platform: body.object
+                });
+                if (db.incoming_events.length > 100) db.incoming_events.shift();
+                saveDb();
             }
         });
         res.status(200).send('EVENT_RECEIVED');
@@ -247,12 +259,32 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
     const allMessages = [];
     let dbUpdated = false;
 
+    // First: Check incoming_events queue (Webhook simulation)
+    const webhookEvents = db.incoming_events.filter(e => e.platform === 'instagram');
+    for (const event of webhookEvents) {
+        const acc = userAccounts.find(a => a.externalId === event.accountId);
+        if (acc) {
+            allMessages.push({
+                id: event.id,
+                text: event.text,
+                timestamp: event.timestamp,
+                accountId: event.accountId,
+                sender: { id: event.senderId, username: 'Webhook User' }
+            });
+        }
+    }
+    // Clear handled webhook events
+    db.incoming_events = db.incoming_events.filter(e => e.platform !== 'instagram');
+    dbUpdated = true;
+
+    // Second: Traditional Polling for safety
     for (const acc of userAccounts) {
         try {
+            // Optimized query as per Meta docs for conversaciones
             const convRes = await axios.get(`https://graph.facebook.com/v21.0/me/conversations`, {
                 params: { 
                     access_token: acc.accessToken, 
-                    fields: 'participants,messages{message,from,created_time},unread_count', 
+                    fields: 'participants,messages.limit(1){message,from,created_time},unread_count', 
                     platform: 'instagram' 
                 }
             });
@@ -269,6 +301,7 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
                 const otherParticipant = conv.participants?.data?.find(p => p.id !== acc.externalId);
                 const lastMsg = conv.messages?.data?.[0];
                 
+                // Only process if it's from the other person and it's new
                 if (lastMsg && otherParticipant && lastMsg.from.id !== acc.externalId) {
                     const profile = await getSenderProfile(otherParticipant.id, acc.accessToken, 'instagram');
                     allMessages.push({
@@ -285,8 +318,12 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
             process.stderr.write(`[POLLING FAILED] Account: ${acc.name} - Reason: ${JSON.stringify(errData || e.message)}\n`);
             acc.status = 'error';
             acc.lastChecked = Date.now();
-            if (errData?.error_subcode === 2207085 || errData?.code === -1) {
-                acc.lastError = `Access Denied. Check Privacy Settings. Trace: ${errData?.fbtrace_id || 'N/A'}`;
+            
+            // Handle specific Meta error codes from docs
+            if (errData?.error_subcode === 2207085 || errData?.code === 10) {
+                acc.lastError = `Access Denied (2207085). Please enable 'Allow Access to Messages' in Instagram App settings.`;
+            } else if (errData?.code === 190) {
+                acc.lastError = `Access Token Expired. Please re-connect the account.`;
             } else {
                 acc.lastError = errData?.message || e.message;
             }
