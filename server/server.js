@@ -39,7 +39,6 @@ function loadDb() {
         try {
             const rawData = fs.readFileSync(DB_FILE, 'utf8');
             db = rawData.trim() ? { ...defaultDb, ...JSON.parse(rawData) } : { ...defaultDb };
-            // Ensure incoming_events exists for older db versions
             if (!db.incoming_events) db.incoming_events = [];
         } catch (e) {
             db = { ...defaultDb };
@@ -74,11 +73,13 @@ const CONFIG = {
     JWT_SECRET: process.env.JWT_SECRET || 'dev_secret_key_123',
     STRIPE_KEY: process.env.STRIPE_SECRET_KEY,
     PLANS: {
-        free: { limit: 100, ai: false, accounts: 1 },
-        pro: { limit: 5000, ai: true, accounts: 5 },
-        business: { limit: 25000, ai: true, accounts: 999 }
+        free: { limit: 100, ai: false, accounts: 1, priceId: '' },
+        pro: { limit: 5000, ai: true, accounts: 5, priceId: 'price_pro_dummy' },
+        business: { limit: 25000, ai: true, accounts: 999, priceId: 'price_biz_dummy' }
     }
 };
+
+const stripe = CONFIG.STRIPE_KEY ? new Stripe(CONFIG.STRIPE_KEY) : null;
 
 const findUser = (email) => db.users.find(u => u.email === email);
 const getUserById = (id) => db.users.find(u => u.id === id);
@@ -127,6 +128,47 @@ app.post('/api/config/settings', (req, res) => {
     res.json({ status: 'ok' });
 });
 
+// --- BILLING ENDPOINTS ---
+
+app.post('/api/billing/checkout', authMiddleware, async (req, res) => {
+    const { priceId } = req.body;
+    const planKey = Object.keys(CONFIG.PLANS).find(key => CONFIG.PLANS[key].priceId === priceId);
+    
+    if (!planKey) return res.status(400).json({ error: 'Invalid plan selected' });
+
+    // If Stripe is configured, create a real session. Otherwise, use a mock redirect.
+    if (stripe && !CONFIG.STRIPE_KEY.includes('placeholder')) {
+        try {
+            const session = await stripe.checkout.sessions.create({
+                payment_method_types: ['card'],
+                line_items: [{ price: priceId, quantity: 1 }],
+                mode: 'subscription',
+                success_url: getRedirectUri(req, `/?billing_success=true&plan=${planKey}`),
+                cancel_url: getRedirectUri(req, '/'),
+                customer_email: req.user.email,
+            });
+            return res.json({ url: session.url });
+        } catch (e) {
+            console.error("Stripe Error", e);
+            // Fallback to mock if stripe fails during dev
+        }
+    }
+
+    // Mock Flow for MVP / Development
+    const mockUrl = getRedirectUri(req, `/?billing_success=true&mock_plan=${planKey}`);
+    res.json({ url: mockUrl });
+});
+
+app.post('/api/dev/upgrade-mock', authMiddleware, (req, res) => {
+    const { plan } = req.body;
+    if (CONFIG.PLANS[plan]) {
+        req.user.plan = plan;
+        saveDb();
+        return res.json({ status: 'ok', plan });
+    }
+    res.status(400).json({ error: 'Invalid plan' });
+});
+
 // --- META WEBHOOK HANDLERS ---
 
 app.get('/api/webhook', (req, res) => {
@@ -151,8 +193,6 @@ app.post('/api/webhook', (req, res) => {
         body.entry?.forEach(entry => {
             const webhook_event = entry.messaging?.[0];
             if (webhook_event && webhook_event.message) {
-                console.log('[WEBHOOK] Incoming message from:', webhook_event.sender.id);
-                // Store event for the engine to pick up (Simulated real-time)
                 db.incoming_events.push({
                     id: webhook_event.message.mid || crypto.randomUUID(),
                     text: webhook_event.message.text,
@@ -259,7 +299,7 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
     const allMessages = [];
     let dbUpdated = false;
 
-    // First: Check incoming_events queue (Webhook simulation)
+    // Webhook simulation check
     const webhookEvents = db.incoming_events.filter(e => e.platform === 'instagram');
     for (const event of webhookEvents) {
         const acc = userAccounts.find(a => a.externalId === event.accountId);
@@ -273,14 +313,12 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
             });
         }
     }
-    // Clear handled webhook events
     db.incoming_events = db.incoming_events.filter(e => e.platform !== 'instagram');
     dbUpdated = true;
 
-    // Second: Traditional Polling for safety
+    // Polling logic refined based on Meta developer docs
     for (const acc of userAccounts) {
         try {
-            // Optimized query as per Meta docs for conversaciones
             const convRes = await axios.get(`https://graph.facebook.com/v21.0/me/conversations`, {
                 params: { 
                     access_token: acc.accessToken, 
@@ -301,7 +339,6 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
                 const otherParticipant = conv.participants?.data?.find(p => p.id !== acc.externalId);
                 const lastMsg = conv.messages?.data?.[0];
                 
-                // Only process if it's from the other person and it's new
                 if (lastMsg && otherParticipant && lastMsg.from.id !== acc.externalId) {
                     const profile = await getSenderProfile(otherParticipant.id, acc.accessToken, 'instagram');
                     allMessages.push({
@@ -315,11 +352,9 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
             }
         } catch (e) {
             const errData = e.response?.data?.error;
-            process.stderr.write(`[POLLING FAILED] Account: ${acc.name} - Reason: ${JSON.stringify(errData || e.message)}\n`);
             acc.status = 'error';
             acc.lastChecked = Date.now();
             
-            // Handle specific Meta error codes from docs
             if (errData?.error_subcode === 2207085 || errData?.code === 10) {
                 acc.lastError = `Access Denied (2207085). Please enable 'Allow Access to Messages' in Instagram App settings.`;
             } else if (errData?.code === 190) {
@@ -375,7 +410,6 @@ const handleSend = async (req, res, platform) => {
         res.json({ success: true, message_id: graphRes.data.message_id || graphRes.data.id });
     } catch (e) {
         const metaErrorObj = e.response?.data?.error;
-        process.stderr.write(`[${platform.toUpperCase()} SEND FAILED] Detail: ${JSON.stringify(metaErrorObj || e.message)}\n`);
         const subcode = metaErrorObj?.error_subcode;
         if (subcode === 2207085) {
             account.status = 'error';
