@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe, FileText, Copy } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe, FileText, Copy, Terminal } from 'lucide-react';
 import axios from 'axios';
 
 export const Settings: React.FC = () => {
   const [form, setForm] = useState({
     metaAppId: '',
     metaAppSecret: '',
-    publicUrl: ''
+    publicUrl: '',
+    webhookVerifyToken: ''
   });
   const [status, setStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -25,7 +26,8 @@ export const Settings: React.FC = () => {
       setForm(f => ({ 
         ...f, 
         metaAppId: res.data.metaAppId || '',
-        publicUrl: res.data.publicUrl || ''
+        publicUrl: res.data.publicUrl || '',
+        webhookVerifyToken: res.data.verifyToken || 'autochat_verify_token'
       }));
     } catch (e) {
       console.error(e);
@@ -55,11 +57,12 @@ export const Settings: React.FC = () => {
   };
 
   const privacyUrl = form.publicUrl ? `${form.publicUrl.replace(/\/$/, '')}/privacy` : `${window.location.origin}/privacy`;
+  const webhookUrl = form.publicUrl ? `${form.publicUrl.replace(/\/$/, '')}/api/webhook` : `${window.location.origin}/api/webhook`;
 
   if (loading) return <div className="p-8 text-slate-500">Loading Configuration...</div>;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto h-full overflow-y-auto">
+    <div className="p-8 max-w-4xl mx-auto h-full overflow-y-auto pb-24">
       <header className="mb-8">
         <h2 className="text-2xl font-bold text-white flex items-center gap-3">
           <SettingsIcon className="text-slate-400" /> Platform Settings
@@ -103,20 +106,34 @@ export const Settings: React.FC = () => {
                 <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                   <Globe size={16} className="text-indigo-400" /> Network Configuration
                 </h4>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
-                    Public App URL (Recommended for https)
-                  </label>
-                  <input 
-                    type="url"
-                    value={form.publicUrl}
-                    onChange={e => setForm({...form, publicUrl: e.target.value})}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                    placeholder="https://your-domain.com"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-2">
-                    Force the OAuth callback to use this specific URL. Essential if you are behind a proxy that strips SSL headers.
-                  </p>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                            Public App URL
+                        </label>
+                        <input 
+                            type="url"
+                            value={form.publicUrl}
+                            onChange={e => setForm({...form, publicUrl: e.target.value})}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
+                            placeholder="https://your-domain.com"
+                        />
+                        <p className="text-[10px] text-slate-500 mt-2">
+                            Required for Meta Webhooks and OAuth callbacks in production.
+                        </p>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                            Webhook Verify Token
+                        </label>
+                        <input 
+                            type="text"
+                            value={form.webhookVerifyToken}
+                            onChange={e => setForm({...form, webhookVerifyToken: e.target.value})}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-blue-500 outline-none font-mono"
+                            placeholder="my_secure_verify_token"
+                        />
+                    </div>
                 </div>
               </div>
 
@@ -138,35 +155,35 @@ export const Settings: React.FC = () => {
           </div>
 
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <FileText size={20} className="text-amber-400" /> Meta App Requirements
+            <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                <Terminal size={20} className="text-green-400" /> Webhook Setup
             </h3>
             <div className="space-y-4">
-                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700/50">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Privacy Policy URL</label>
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Callback URL</label>
                     <div className="flex gap-2">
                         <input 
                             readOnly
-                            value={privacyUrl}
-                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 font-mono outline-none"
+                            value={webhookUrl}
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 font-mono outline-none"
                         />
-                        <button 
-                            onClick={() => copyToClipboard(privacyUrl)}
-                            className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-slate-300"
-                        >
+                        <button onClick={() => copyToClipboard(webhookUrl)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-slate-300">
                             <Copy size={16} />
                         </button>
-                        <a 
-                            href="/privacy" 
-                            target="_blank"
-                            className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-slate-300"
-                        >
-                            <ExternalLink size={16} />
-                        </a>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-2">
-                        Copy this URL and paste it into the <b>Privacy Policy URL</b> field in your Meta App settings.
-                    </p>
+                </div>
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Verify Token</label>
+                    <div className="flex gap-2">
+                        <input 
+                            readOnly
+                            value={form.webhookVerifyToken}
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-300 font-mono outline-none"
+                        />
+                        <button onClick={() => copyToClipboard(form.webhookVerifyToken)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-lg text-slate-300">
+                            <Copy size={16} />
+                        </button>
+                    </div>
                 </div>
             </div>
           </div>
@@ -175,30 +192,24 @@ export const Settings: React.FC = () => {
         <div className="space-y-6">
           <div className="bg-indigo-900/20 border border-indigo-800 rounded-2xl p-6">
             <h3 className="text-indigo-200 font-bold mb-4 flex items-center gap-2">
-              <Shield size={18} /> HTTPS is Required
+              <Shield size={18} /> Production Ready
             </h3>
-            <p className="text-indigo-100/70 text-sm leading-relaxed mb-4">
-              Meta (Facebook) requires the redirect URL and Privacy Policy to use <strong>https://</strong> in production environments.
-            </p>
-            <p className="text-indigo-100/70 text-sm leading-relaxed mb-4">
-              Your generated Privacy Policy is automatically served at <code>/privacy</code>.
+            <p className="text-indigo-100/70 text-sm leading-relaxed">
+              Meta requires HTTPS for all live webhooks. Use a tool like <strong>ngrok</strong> for local development or deploy to a secure host like Google Cloud Run.
             </p>
           </div>
 
           <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6">
             <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-              <Info size={18} className="text-slate-400" /> Meta Setup
+                <FileText size={18} className="text-slate-400" /> Meta App URLs
             </h3>
-            <p className="text-slate-400 text-xs leading-relaxed mb-4">
-              Ensure you have added your domain to the "Allowed Redirect URIs" in the Meta Developer Portal.
-            </p>
-            <a 
-              href="https://developers.facebook.com/apps" 
-              target="_blank" 
-              className="text-blue-400 hover:text-blue-300 font-bold text-sm flex items-center gap-2"
-            >
-              Go to Meta Developers <ExternalLink size={14} />
-            </a>
+            <div className="space-y-3">
+                <div className="text-[10px] text-slate-500 uppercase font-bold">Privacy Policy</div>
+                <div className="flex gap-2">
+                    <input readOnly value={privacyUrl} className="flex-1 bg-slate-900 p-2 rounded text-[10px] text-slate-400 font-mono outline-none" />
+                    <button onClick={() => copyToClipboard(privacyUrl)} className="text-slate-400"><Copy size={12}/></button>
+                </div>
+            </div>
           </div>
         </div>
       </div>

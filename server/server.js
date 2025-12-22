@@ -1,5 +1,4 @@
 
-
 import express from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
@@ -64,7 +63,8 @@ const getRedirectUri = (req, path) => {
 
 const getMetaConfig = () => ({
     appId: process.env.FACEBOOK_APP_ID || db.settings?.metaAppId,
-    appSecret: process.env.FACEBOOK_APP_SECRET || db.settings?.metaAppSecret
+    appSecret: process.env.FACEBOOK_APP_SECRET || db.settings?.metaAppSecret,
+    verifyToken: process.env.WEBHOOK_VERIFY_TOKEN || db.settings?.webhookVerifyToken || 'autochat_verify_token'
 });
 
 const CONFIG = {
@@ -110,19 +110,53 @@ app.get('/api/config/status', (req, res) => {
     const meta = getMetaConfig();
     res.json({
         metaConfigured: !!(meta.appId && meta.appSecret),
-        // Use process.env.API_KEY exclusively for AI configuration status
         aiConfigured: !!process.env.API_KEY,
         stripeConfigured: !!(CONFIG.STRIPE_KEY && !CONFIG.STRIPE_KEY.includes('placeholder')),
         metaAppId: meta.appId,
-        publicUrl: db.settings?.publicUrl
+        publicUrl: db.settings?.publicUrl,
+        verifyToken: meta.verifyToken
     });
 });
 
 app.post('/api/config/settings', (req, res) => {
-    const { metaAppId, metaAppSecret, publicUrl } = req.body;
-    db.settings = { ...db.settings, metaAppId, metaAppSecret, publicUrl };
+    const { metaAppId, metaAppSecret, publicUrl, webhookVerifyToken } = req.body;
+    db.settings = { ...db.settings, metaAppId, metaAppSecret, publicUrl, webhookVerifyToken };
     saveDb();
     res.json({ status: 'ok' });
+});
+
+// --- META WEBHOOK HANDLERS ---
+
+app.get('/api/webhook', (req, res) => {
+    const meta = getMetaConfig();
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    if (mode && token) {
+        if (mode === 'subscribe' && token === meta.verifyToken) {
+            console.log('WEBHOOK_VERIFIED');
+            res.status(200).send(challenge);
+        } else {
+            res.sendStatus(403);
+        }
+    }
+});
+
+app.post('/api/webhook', (req, res) => {
+    const body = req.body;
+    if (body.object === 'page' || body.object === 'instagram') {
+        body.entry?.forEach(entry => {
+            const webhook_event = entry.messaging?.[0];
+            if (webhook_event && webhook_event.message) {
+                console.log('[WEBHOOK] Incoming message from:', webhook_event.sender.id);
+                // In a real app, this would emit to a socket or push to a queue for the automation engine
+            }
+        });
+        res.status(200).send('EVENT_RECEIVED');
+    } else {
+        res.sendStatus(404);
+    }
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -149,12 +183,6 @@ app.get('/api/auth/me', authMiddleware, (req, res) => {
     res.json({ user: req.user, usage: { ...usage, limit: plan.limit, aiEnabled: plan.ai, maxAccounts: plan.accounts } });
 });
 
-// --- SEO ROUTES ---
-app.get('/robots.txt', (req, res) => {
-    res.type('text/plain');
-    res.send("User-agent: *\nDisallow: /api/\nDisallow: /auth/\nSitemap: " + (db.settings?.publicUrl || 'https://autochat.com') + "/sitemap.xml");
-});
-
 // --- META OAUTH ---
 
 app.get('/auth/facebook/login', (req, res) => {
@@ -162,7 +190,7 @@ app.get('/auth/facebook/login', (req, res) => {
     const flow = req.query.flow || 'instagram';
     const callbackPath = flow === 'facebook' ? '/connect-fb' : '/connect-ig';
     const redirectUri = getRedirectUri(req, callbackPath);
-    const scopes = 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages';
+    const scopes = 'pages_show_list,pages_read_engagement,instagram_basic,instagram_manage_messages,public_profile';
     const url = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${meta.appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scopes}&state=${flow}`;
     res.redirect(url);
 });
@@ -254,14 +282,11 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
             }
         } catch (e) {
             const errData = e.response?.data?.error;
-            // Enhanced logging to stderr for Cloud Run visibility - includes FB Trace ID
             process.stderr.write(`[POLLING FAILED] Account: ${acc.name} - Reason: ${JSON.stringify(errData || e.message)}\n`);
-            
             acc.status = 'error';
             acc.lastChecked = Date.now();
-            
             if (errData?.error_subcode === 2207085 || errData?.code === -1) {
-                acc.lastError = `Access Denied (Subcode 2207085). Ensure 'Allow Access to Messages' is ON in IG Settings. Trace: ${errData?.fbtrace_id || 'N/A'}`;
+                acc.lastError = `Access Denied. Check Privacy Settings. Trace: ${errData?.fbtrace_id || 'N/A'}`;
             } else {
                 acc.lastError = errData?.message || e.message;
             }
@@ -294,8 +319,6 @@ const handleSend = async (req, res, platform) => {
     try {
         let url = '';
         let body = {};
-        
-        // CRITICAL: Meta IDs must be strings. Casting here to prevent 500s.
         const recipientId = String(to);
         const messageText = String(text);
 
@@ -315,50 +338,42 @@ const handleSend = async (req, res, platform) => {
         res.json({ success: true, message_id: graphRes.data.message_id || graphRes.data.id });
     } catch (e) {
         const metaErrorObj = e.response?.data?.error;
-        // Enhanced logging to stderr for Cloud Run visibility
         process.stderr.write(`[${platform.toUpperCase()} SEND FAILED] Detail: ${JSON.stringify(metaErrorObj || e.message)}\n`);
-        
-        const errorMessage = metaErrorObj?.message || e.message;
         const subcode = metaErrorObj?.error_subcode;
-
-        // If we hit the Fatal Permission error during a send, update account status
         if (subcode === 2207085) {
             account.status = 'error';
-            account.lastError = `Access Denied (Subcode 2207085). Check Instagram Privacy Settings. Trace: ${metaErrorObj?.fbtrace_id || 'N/A'}`;
+            account.lastError = `Access Denied. Trace: ${metaErrorObj?.fbtrace_id || 'N/A'}`;
             saveDb();
         }
-
-        res.status(500).json({ 
-            error: errorMessage, 
-            subcode: subcode,
-            details: metaErrorObj
-        });
+        res.status(500).json({ error: metaErrorObj?.message || e.message });
     }
 };
 
 app.post('/api/facebook/send', authMiddleware, (req, res) => handleSend(req, res, 'facebook'));
-app.post('/api/messenger/send', authMiddleware, (req, res) => handleSend(req, res, 'facebook'));
 app.post('/api/instagram/send', authMiddleware, (req, res) => handleSend(req, res, 'instagram'));
 app.post('/api/whatsapp/send', authMiddleware, (req, res) => handleSend(req, res, 'whatsapp'));
 
 app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => {
-    // Exclusively use process.env.API_KEY
     const apiKey = process.env.API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'AI_KEY_MISSING' });
     try {
         const ai = new GoogleGenAI({ apiKey });
-        // Using 'gemini-3-pro-preview' for complex structural reasoning tasks like flow generation
+        const systemInstruction = `You are a chatbot expert. Return a JSON array of FlowNodes. 
+        Each node MUST match this structure: { "id": "string", "type": "message|delay|question|condition|ai_generate", "position": {"x":0, "y":0}, "data": {"content": "...", "variable": "...", "delayMs": 1000}, "nextId": "optional_id" }. 
+        Connect nodes logically. Ensure valid JSON only.`;
+
         const response = await ai.models.generateContent({
             model: 'gemini-3-pro-preview',
-            contents: req.body.prompt,
-            config: { responseMimeType: 'application/json' }
+            contents: `Generate a chatbot flow for: ${req.body.prompt}`,
+            config: { 
+                systemInstruction,
+                responseMimeType: 'application/json' 
+            }
         });
-        // Correctly accessing .text property of GenerateContentResponse
-        const textOutput = response.text || '[]';
-        res.json({ nodes: JSON.parse(textOutput) });
+        res.json({ nodes: JSON.parse(response.text || '[]') });
     } catch (e) { 
         console.error("AI Generation Error:", e);
-        res.status(500).json({ error: 'AI failed' }); 
+        res.status(500).json({ error: 'AI failed to generate valid nodes.' }); 
     }
 });
 
@@ -366,7 +381,7 @@ const distPath = path.resolve(__dirname, '../dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api') && !req.path.startsWith('/auth') && req.path !== '/robots.txt') {
+        if (!req.path.startsWith('/api') && !req.path.startsWith('/auth')) {
             res.sendFile(path.join(distPath, 'index.html'));
         }
     });
