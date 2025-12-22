@@ -185,7 +185,8 @@ export class AutomationEngine {
         if (node.nextId && node.data.variable) this.pausedStates.set(subscriber.id, { flowId, nextNodeId: node.nextId, variable: node.data.variable });
         return undefined;
       case 'ai_generate':
-         const apiKey = process.env.API_KEY;
+         // Dynamically check for the API key to pick up keys selected during the session
+         const apiKey = (window as any).process?.env?.API_KEY || (process as any).env?.API_KEY;
          if (!apiKey) {
            this.sendBotMessage("[AI Disabled: Missing API Key in Settings]", subscriber, accountId);
            return node.nextId;
