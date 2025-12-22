@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe, FileText, Copy, Terminal, Sparkles, Bot, CreditCard } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Key, Shield, Info, CheckCircle, AlertCircle, ExternalLink, Globe, FileText, Copy, Terminal, Sparkles, Bot, CreditCard, RefreshCw, Activity } from 'lucide-react';
 import axios from 'axios';
 
 export const Settings: React.FC = () => {
@@ -36,9 +36,8 @@ export const Settings: React.FC = () => {
     try {
       if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
         await window.aistudio.openSelectKey();
-        // Per instructions: assume success and proceed
         setHasAiKey(true);
-        fetchStatus(); // Refresh status from backend to see if it's picked up
+        fetchStatus();
       }
     } catch (e) {
       console.error("Failed to open key selector", e);
@@ -48,7 +47,9 @@ export const Settings: React.FC = () => {
   const fetchStatus = async () => {
     try {
       const res = await axios.get('/api/config/status');
+      console.log("[Settings] Loaded status:", res.data);
       setStatus(res.data);
+      // Ensure we fill the form with whatever the server says is active
       setForm({ 
         metaAppId: res.data.metaAppId || '',
         metaAppSecret: res.data.metaAppSecret || '',
@@ -69,7 +70,8 @@ export const Settings: React.FC = () => {
     try {
       await axios.post('/api/config/settings', form);
       setMsg({ type: 'success', text: 'Settings saved successfully!' });
-      fetchStatus();
+      // Important: Refetch to show the latest "effective" values
+      setTimeout(fetchStatus, 500);
     } catch (err) {
       setMsg({ type: 'error', text: 'Failed to save settings.' });
     } finally {
@@ -113,7 +115,7 @@ export const Settings: React.FC = () => {
               Power your automations with Google's most capable AI models. Select a paid API key to enable Flow Generation and Intelligent Replies.
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center gap-4">
+            <div className="flex flex-col sm:flex-row items-center gap-4 relative z-10">
                <button 
                   onClick={handleSelectAiKey}
                   className="w-full sm:w-auto bg-purple-600 hover:bg-purple-500 text-white font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-purple-900/20 transition-all active:scale-95"
@@ -152,7 +154,14 @@ export const Settings: React.FC = () => {
             <form onSubmit={handleSave} className="space-y-6">
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Facebook App ID</label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase">Facebook App ID</label>
+                    {status?.metaAppIdSource === 'env' && (
+                        <span className="text-[10px] text-indigo-400 font-bold bg-indigo-900/20 px-2 py-0.5 rounded flex items-center gap-1">
+                            <Activity size={10} /> Loaded from Environment
+                        </span>
+                    )}
+                  </div>
                   <input 
                     type="text"
                     value={form.metaAppId}
@@ -163,7 +172,14 @@ export const Settings: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Facebook App Secret</label>
+                   <div className="flex justify-between items-center mb-2">
+                    <label className="block text-xs font-bold text-slate-500 uppercase">Facebook App Secret</label>
+                    {status?.metaAppSecretSource === 'env' && (
+                        <span className="text-[10px] text-indigo-400 font-bold bg-indigo-900/20 px-2 py-0.5 rounded flex items-center gap-1">
+                            <Activity size={10} /> Loaded from Environment
+                        </span>
+                    )}
+                  </div>
                   <input 
                     type="password"
                     value={form.metaAppSecret}
@@ -216,13 +232,22 @@ export const Settings: React.FC = () => {
                 </div>
               )}
 
-              <button 
-                type="submit"
-                disabled={saving}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all w-full md:w-auto"
-              >
-                {saving ? 'Saving...' : <><Save size={18} /> Save Settings</>}
-              </button>
+              <div className="flex flex-col sm:flex-row gap-4">
+                  <button 
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+                  >
+                    {saving ? 'Saving...' : <><Save size={18} /> Save Settings</>}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={fetchStatus}
+                    className="bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold px-6 py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+                  >
+                    <RefreshCw size={18} /> Refresh State
+                  </button>
+              </div>
             </form>
           </div>
 

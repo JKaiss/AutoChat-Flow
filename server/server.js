@@ -65,7 +65,10 @@ const getRedirectUri = (req, path) => {
 const getMetaConfig = () => ({
     appId: process.env.FACEBOOK_APP_ID || db.settings?.metaAppId,
     appSecret: process.env.FACEBOOK_APP_SECRET || db.settings?.metaAppSecret,
-    verifyToken: process.env.WEBHOOK_VERIFY_TOKEN || db.settings?.webhookVerifyToken || 'autochat_verify_token'
+    verifyToken: process.env.WEBHOOK_VERIFY_TOKEN || db.settings?.webhookVerifyToken || 'autochat_verify_token',
+    // Flags to tell the UI where values come from
+    appIdSource: process.env.FACEBOOK_APP_ID ? 'env' : (db.settings?.metaAppId ? 'db' : 'none'),
+    appSecretSource: process.env.FACEBOOK_APP_SECRET ? 'env' : (db.settings?.metaAppSecret ? 'db' : 'none')
 });
 
 const CONFIG = {
@@ -111,12 +114,15 @@ const authMiddleware = (req, res, next) => {
 
 app.get('/api/config/status', (req, res) => {
     const meta = getMetaConfig();
+    console.log("[Status] Config check performed. Meta ID source:", meta.appIdSource);
     res.json({
         metaConfigured: !!(meta.appId && meta.appSecret),
         aiConfigured: !!process.env.API_KEY,
         stripeConfigured: !!(CONFIG.STRIPE_KEY && !CONFIG.STRIPE_KEY.includes('placeholder')),
         metaAppId: meta.appId || '',
-        metaAppSecret: meta.appSecret || '', // Return secret so form is populated
+        metaAppSecret: meta.appSecret || '',
+        metaAppIdSource: meta.appIdSource,
+        metaAppSecretSource: meta.appSecretSource,
         publicUrl: db.settings?.publicUrl || '',
         verifyToken: meta.verifyToken || 'autochat_verify_token'
     });
@@ -137,7 +143,6 @@ app.post('/api/billing/checkout', authMiddleware, async (req, res) => {
     
     if (!planKey) return res.status(400).json({ error: 'Invalid plan selected' });
 
-    // If Stripe is configured, create a real session. Otherwise, use a mock redirect.
     if (stripe && !CONFIG.STRIPE_KEY.includes('placeholder')) {
         try {
             const session = await stripe.checkout.sessions.create({
@@ -151,11 +156,9 @@ app.post('/api/billing/checkout', authMiddleware, async (req, res) => {
             return res.json({ url: session.url });
         } catch (e) {
             console.error("Stripe Error", e);
-            // Fallback to mock if stripe fails during dev
         }
     }
 
-    // Mock Flow for MVP / Development
     const mockUrl = getRedirectUri(req, `/?billing_success=true&mock_plan=${planKey}`);
     res.json({ url: mockUrl });
 });
@@ -300,7 +303,6 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
     const allMessages = [];
     let dbUpdated = false;
 
-    // Webhook simulation check
     const webhookEvents = db.incoming_events.filter(e => e.platform === 'instagram');
     for (const event of webhookEvents) {
         const acc = userAccounts.find(a => a.externalId === event.accountId);
@@ -317,7 +319,6 @@ app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => {
     db.incoming_events = db.incoming_events.filter(e => e.platform !== 'instagram');
     dbUpdated = true;
 
-    // Polling logic refined based on Meta developer docs
     for (const acc of userAccounts) {
         try {
             const convRes = await axios.get(`https://graph.facebook.com/v21.0/me/conversations`, {
