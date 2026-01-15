@@ -281,7 +281,62 @@ app.post('/api/billing/checkout', authMiddleware, async (req, res) => { /* ... *
 app.post('/api/dev/upgrade-mock', authMiddleware, (req, res) => { /* ... */ });
 app.post('/api/instagram/check-messages', authMiddleware, async (req, res) => res.json({ messages: [] }));
 app.post('/api/flow/execute-check', authMiddleware, (req, res) => res.sendStatus(200));
-app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => { /* ... */ });
+
+app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => {
+    const { prompt } = req.body;
+    if (!process.env.API_KEY) {
+        return res.status(500).json({ error: 'AI is not configured on the server.' });
+    }
+    if (!prompt) {
+        return res.status(400).json({ error: 'Prompt is required.' });
+    }
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        
+        const systemInstruction = `You are an expert chatbot flow designer. Your task is to convert a user's natural language prompt into a valid JSON structure representing a chatbot flow.
+        The JSON output must conform to this structure: { "name": "Flow Name", "triggerType": "valid_trigger_type", "triggerKeyword": "optional_keyword", "nodes": [ { "id": "node_unique_id", "type": "valid_node_type", "data": { ... }, "nextId": "next_node_id" } ] }.
+        - Node IDs must be unique strings like "node_1", "node_2".
+        - 'nextId' must point to a valid subsequent node ID. The last node should have no 'nextId'.
+        - For 'condition' nodes, you must provide both 'nextId' (for true) and 'falseNextId' (for false).
+        - Valid trigger types: keyword, instagram_comment, instagram_dm, instagram_story_mention, whatsapp_message, messenger_text. Choose the most appropriate one.
+        - Valid node types: message, delay, question, condition, ai_generate.
+        - For 'question' nodes, define a 'variable' name in 'data' to store the answer.
+        - For 'condition' nodes, define 'conditionVar' and 'conditionValue' in 'data'.
+        - Keep content concise and conversational.
+        - The flow must be logical and complete based on the prompt.
+        - Always return ONLY the raw JSON object, with no markdown formatting or explanations.`;
+
+        const fullPrompt = `Generate a chatbot flow for the following prompt: "${prompt}"`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: fullPrompt,
+            config: {
+                systemInstruction: systemInstruction,
+                responseMimeType: "application/json",
+            }
+        });
+
+        const generatedJsonText = response.text;
+        if (!generatedJsonText) {
+            throw new Error("AI returned an empty response.");
+        }
+        
+        const cleanJson = generatedJsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const flow = JSON.parse(cleanJson);
+
+        if (!flow.name || !flow.triggerType || !Array.isArray(flow.nodes)) {
+            throw new Error("Generated JSON has an invalid structure.");
+        }
+
+        res.json({ flow });
+
+    } catch (e) {
+        console.error("[AI Flow Gen Error]", e);
+        res.status(500).json({ error: 'Failed to generate flow with AI.' });
+    }
+});
 
 
 // --- STATIC SERVING ---

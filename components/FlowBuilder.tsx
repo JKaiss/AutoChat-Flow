@@ -150,8 +150,35 @@ export const FlowBuilder: React.FC = () => {
     updateFlow({ nodes: updatedNodes });
   };
 
-  const handleAiClick = () => { /* ... unchanged ... */ };
-  const generateFlowWithAi = async () => { /* ... unchanged ... */ };
+  const handleAiClick = () => {
+    if (user?.plan === 'free') {
+      triggerUpgrade('AI Flow Generation is a Pro feature.');
+      return;
+    }
+    setShowAiModal(true);
+  };
+
+  const generateFlowWithAi = async () => {
+    if (!aiPrompt) return;
+    setIsGenerating(true);
+    try {
+      const res = await axios.post('/api/ai/generate-flow', { prompt: aiPrompt });
+      const newFlowData = res.data.flow;
+      
+      const resNewFlow = await axios.post('/api/flows', newFlowData);
+      const createdFlow = resNewFlow.data;
+
+      setFlows(prev => [...prev, createdFlow]);
+      setActiveFlowId(createdFlow.id);
+      setShowAiModal(false);
+      setAiPrompt('');
+    } catch (e) {
+      alert('Failed to generate flow with AI. Please check the server logs.');
+      console.error(e);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
   
   if (isLoading) {
       return <div className="p-8 flex items-center justify-center h-full"><Loader className="animate-spin text-blue-500" /></div>;
@@ -191,7 +218,34 @@ export const FlowBuilder: React.FC = () => {
           ))}
           {flows.length === 0 && <div className="col-span-3 text-center py-20 text-slate-500">No flows yet. Create one to get started.</div>}
         </div>
-        {showAiModal && ( /* ... unchanged ... */ )}
+        {showAiModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 animate-in fade-in duration-200">
+            <div className="bg-slate-800 w-full max-w-lg rounded-xl border border-slate-700 p-8 relative">
+              <button onClick={() => setShowAiModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <X size={20} />
+              </button>
+              <h3 className="text-xl font-bold mb-2 text-white">Generate Flow with AI</h3>
+              <p className="text-slate-400 mb-6">Describe the flow you want to build, including the trigger and the steps.</p>
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                className="w-full h-32 bg-slate-900 border border-slate-600 rounded-lg p-3 mb-4 text-sm text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none transition-all resize-none"
+                placeholder="e.g., 'An Instagram comment flow. When a user comments 'price', send them a DM with the price list and ask if they have questions.'"
+              />
+              <div className="flex justify-end gap-4">
+                <button onClick={() => setShowAiModal(false)} className="text-slate-400 hover:text-white px-4 py-2 rounded-lg text-sm font-medium">Cancel</button>
+                <button
+                  onClick={generateFlowWithAi}
+                  disabled={isGenerating || !aiPrompt}
+                  className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? <Loader size={16} className="animate-spin" /> : <Wand2 size={16} />}
+                  {isGenerating ? 'Generating...' : 'Generate'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
