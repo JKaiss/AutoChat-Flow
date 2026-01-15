@@ -23,10 +23,11 @@ if (fs.existsSync(rootEnvPath)) {
 }
 
 const requiredEnv = ['DATABASE_URL', 'JWT_SECRET'];
+let isConfigured = true;
 for (const varName of requiredEnv) {
     if (!process.env[varName]) {
-        console.error(`❌ FATAL ERROR: Environment variable ${varName} is not set. Server cannot start.`);
-        process.exit(1);
+        console.error(`❌ FATAL ERROR: Environment variable ${varName} is not set. Server cannot start properly.`);
+        isConfigured = false;
     }
 }
 
@@ -49,10 +50,15 @@ const app = express();
 const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
 });
-pool.query('SELECT NOW()').then(res => console.log('🐘 PostgreSQL connected:', res.rows[0].now)).catch(err => {
-    console.error('❌ Database connection error', err.stack);
-    process.exit(1);
-});
+
+if (isConfigured) {
+    pool.query('SELECT NOW()').then(res => console.log('🐘 PostgreSQL connected:', res.rows[0].now)).catch(err => {
+        console.error('❌ Database connection error. The application will not function correctly.', err.stack);
+    });
+} else {
+    console.error('❌ Skipping database connection check due to missing environment variables.');
+}
+
 
 // --- MIDDLEWARE ---
 app.set('trust proxy', true);
