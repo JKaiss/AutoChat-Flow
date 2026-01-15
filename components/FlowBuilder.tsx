@@ -274,7 +274,21 @@ export const FlowBuilder: React.FC = () => {
                        {/* ... options unchanged ... */}
                     </select>
                 </div>
-                {filteredAccounts.length > 0 && ( /* ... unchanged ... */ )}
+                {filteredAccounts.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 font-bold">ACCOUNT:</span>
+                    <select
+                        value={activeFlow?.triggerAccountId || ''}
+                        onChange={(e) => updateFlow({ triggerAccountId: e.target.value || undefined })}
+                        className="bg-slate-900 border border-slate-700 text-xs text-white rounded px-2 py-1 outline-none max-w-[150px] truncate"
+                    >
+                        <option value="">All Accounts</option>
+                        {filteredAccounts.map(acc => (
+                            <option key={acc.id} value={acc.id}>{acc.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                )}
             </div>
           </div>
         </div>

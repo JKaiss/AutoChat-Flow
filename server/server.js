@@ -181,12 +181,160 @@ app.delete('/api/accounts/:id', authMiddleware, async (req, res) => {
     } catch (e) { res.status(500).json({ error: 'Failed to delete account' }); }
 });
 
-// --- FLOWS API (UNCHANGED) ---
-app.get('/api/flows', authMiddleware, async (req, res) => { /* ... */ });
-app.get('/api/flows/:id', authMiddleware, async (req, res) => { /* ... */ });
-app.post('/api/flows', authMiddleware, async (req, res) => { /* ... */ });
-app.put('/api/flows/:id', authMiddleware, async (req, res) => { /* ... */ });
-app.delete('/api/flows/:id', authMiddleware, async (req, res) => { /* ... */ });
+// --- FLOWS API (IMPLEMENTED) ---
+app.get('/api/flows', authMiddleware, async (req, res) => {
+    const { organizationId } = req.auth;
+    try {
+        const result = await pool.query(
+            'SELECT id, name, trigger_type as "triggerType", active FROM flows WHERE organization_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC',
+            [organizationId]
+        );
+        res.json(result.rows);
+    } catch (e) {
+        console.error('Failed to fetch flows', e);
+        res.status(500).json({ error: 'Failed to fetch flows' });
+    }
+});
+
+app.get('/api/flows/:id', authMiddleware, async (req, res) => {
+    const { organizationId } = req.auth;
+    const { id } = req.params;
+    try {
+        const flowRes = await pool.query(
+            'SELECT id, name, trigger_type as "triggerType", trigger_keyword as "triggerKeyword", trigger_account_id as "triggerAccountId", active FROM flows WHERE id = $1 AND organization_id = $2 AND deleted_at IS NULL',
+            [id, organizationId]
+        );
+        if (flowRes.rowCount === 0) return res.status(404).json({ error: 'Flow not found' });
+
+        const nodesRes = await pool.query(
+            'SELECT id, node_type as "type", position, data, next_id as "nextId", false_next_id as "falseNextId" FROM flow_nodes WHERE flow_id = $1 ORDER BY created_at ASC', [id]
+        );
+        
+        res.json({
+            ...flowRes.rows[0],
+            nodes: nodesRes.rows
+        });
+    } catch (e) {
+        console.error('Failed to fetch flow details', e);
+        res.status(500).json({ error: 'Failed to fetch flow details' });
+    }
+});
+
+app.post('/api/flows', authMiddleware, async (req, res) => {
+    const { organizationId } = req.auth;
+    const { name, triggerType, triggerKeyword, triggerAccountId, nodes = [] } = req.body;
+    
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const flowResult = await client.query(
+            `INSERT INTO flows (organization_id, name, trigger_type, trigger_keyword, trigger_account_id, active)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [organizationId, name, triggerType, triggerKeyword, triggerAccountId, false]
+        );
+        const newFlow = flowResult.rows[0];
+
+        const tempToPermIdMap = new Map();
+        for (const node of nodes) {
+            const nodeRes = await client.query(
+                `INSERT INTO flow_nodes (flow_id, node_type, position, data) VALUES ($1, $2, $3, $4) RETURNING id`,
+                [newFlow.id, node.type, JSON.stringify(node.position || {x:0, y:0}), JSON.stringify(node.data || {})]
+            );
+            tempToPermIdMap.set(node.id, nodeRes.rows[0].id);
+        }
+
+        for (const node of nodes) {
+            const permId = tempToPermIdMap.get(node.id);
+            const nextPermId = node.nextId ? tempToPermIdMap.get(node.nextId) : null;
+            const falseNextPermId = node.falseNextId ? tempToPermIdMap.get(node.falseNextId) : null;
+            if (nextPermId || falseNextPermId) {
+                await client.query(
+                    `UPDATE flow_nodes SET next_id = $1, false_next_id = $2 WHERE id = $3`,
+                    [nextPermId, falseNextPermId, permId]
+                );
+            }
+        }
+        
+        await client.query('COMMIT');
+        res.status(201).json({ ...newFlow, nodes });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('Failed to create flow', e);
+        res.status(500).json({ error: 'Failed to create flow' });
+    } finally {
+        client.release();
+    }
+});
+
+app.put('/api/flows/:id', authMiddleware, async (req, res) => {
+    const { organizationId } = req.auth;
+    const { id } = req.params;
+    const { name, triggerType, triggerKeyword, triggerAccountId, nodes = [], active } = req.body;
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const flowCheck = await client.query('SELECT id FROM flows WHERE id = $1 AND organization_id = $2', [id, organizationId]);
+        if (flowCheck.rowCount === 0) {
+            throw new Error('Flow not found or access denied');
+        }
+
+        await client.query(
+            `UPDATE flows SET name = $1, trigger_type = $2, trigger_keyword = $3, trigger_account_id = $4, active = $5, updated_at = NOW()
+             WHERE id = $6`,
+            [name, triggerType, triggerKeyword, triggerAccountId, active, id]
+        );
+
+        await client.query('DELETE FROM flow_nodes WHERE flow_id = $1', [id]);
+        
+        const tempToPermIdMap = new Map();
+        for (const node of nodes) {
+            const nodeRes = await client.query(
+                `INSERT INTO flow_nodes (flow_id, node_type, position, data) VALUES ($1, $2, $3, $4) RETURNING id`,
+                [id, node.type, JSON.stringify(node.position || {x:0, y:0}), JSON.stringify(node.data || {})]
+            );
+            tempToPermIdMap.set(node.id, nodeRes.rows[0].id);
+        }
+
+        for (const node of nodes) {
+            const permId = tempToPermIdMap.get(node.id);
+            const nextPermId = node.nextId ? tempToPermIdMap.get(node.nextId) : null;
+            const falseNextPermId = node.falseNextId ? tempToPermIdMap.get(node.falseNextId) : null;
+            if (nextPermId || falseNextPermId) {
+                await client.query(
+                    `UPDATE flow_nodes SET next_id = $1, false_next_id = $2 WHERE id = $3`,
+                    [nextPermId, falseNextPermId, permId]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+        res.json({ message: 'Flow updated' });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('Failed to update flow', e);
+        if (e.message.includes('not found')) return res.status(404).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to update flow' });
+    } finally {
+        client.release();
+    }
+});
+
+app.delete('/api/flows/:id', authMiddleware, async (req, res) => {
+    const { organizationId } = req.auth;
+    const { id } = req.params;
+    try {
+        const result = await pool.query(
+            'UPDATE flows SET deleted_at = NOW() WHERE id = $1 AND organization_id = $2',
+            [id, organizationId]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Flow not found or access denied' });
+        res.status(204).send();
+    } catch (e) {
+        console.error('Failed to delete flow', e);
+        res.status(500).json({ error: 'Failed to delete flow' });
+    }
+});
 
 // --- META OAUTH (REVISED WITH SECURE STATE) ---
 app.get('/auth/facebook/login', authMiddleware, async (req, res) => {
