@@ -1,9 +1,9 @@
 
+
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Layout } from './components/Layout';
 import { Loader } from 'lucide-react';
-import { db } from './services/db';
 import { engine } from './services/engine';
 import axios from 'axios';
 
@@ -50,26 +50,8 @@ const AppContent: React.FC = () => {
     return <Suspense fallback={<div className="h-screen bg-slate-950" />}><PrivacyPolicy /></Suspense>;
   }
 
-  useEffect(() => {
-    const syncAccounts = async () => {
-        const accounts = db.getAllAccounts();
-        for (const acc of accounts) {
-            try {
-                await axios.post('/api/register-account', {
-                    externalId: acc.externalId,
-                    accessToken: acc.accessToken,
-                    platform: acc.platform,
-                    name: acc.name
-                });
-            } catch (e) {
-                console.warn(`Failed to sync account ${acc.name} to backend`, e);
-            }
-        }
-    };
-    if (user && user.id !== 'offline_user') {
-        syncAccounts();
-    }
-  }, [user]);
+  // FIX: Removed obsolete account syncing logic that was causing an error.
+  // The backend is now the single source of truth for accounts.
 
   useEffect(() => {
     if (user?.id) {

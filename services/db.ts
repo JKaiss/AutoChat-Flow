@@ -2,16 +2,14 @@
 import { Flow, Subscriber, ExecutionLog, Account, Platform } from "../types";
 
 const DB_KEYS = {
-  FLOWS: 'autochat_flows',
   SUBSCRIBERS: 'autochat_subscribers',
   LOGS: 'autochat_logs',
-  ACCOUNTS: 'autochat_accounts_v2', // Unified storage
 };
 
+// This class now only handles data not critical to Phase 1, like ephemeral logs and subscribers.
+// All critical data (flows, accounts, settings) is now managed by the backend API.
 class MockDatabase {
-  constructor() {
-    // Seeding logic is now handled by the backend or migrations
-  }
+  constructor() {}
 
   // --- SUBSCRIBERS ---
   getSubscribers(): Subscriber[] {
@@ -39,35 +37,6 @@ class MockDatabase {
     logs.unshift(log);
     if (logs.length > 500) logs.pop();
     localStorage.setItem(DB_KEYS.LOGS, JSON.stringify(logs));
-  }
-
-  // --- UNIFIED ACCOUNTS (Still mock for now) ---
-  getAllAccounts(): Account[] {
-    return JSON.parse(localStorage.getItem(DB_KEYS.ACCOUNTS) || '[]');
-  }
-
-  getAccountsByPlatform(platform: Platform): Account[] {
-    return this.getAllAccounts().filter(a => a.platform === platform);
-  }
-
-  getAccountByExternalId(externalId: string): Account | undefined {
-    return this.getAllAccounts().find(a => a.externalId === externalId);
-  }
-
-  saveAccount(account: Account) {
-    const accounts = this.getAllAccounts();
-    const index = accounts.findIndex(a => a.id === account.id || a.externalId === account.externalId);
-    if (index >= 0) {
-      accounts[index] = account; // Update
-    } else {
-      accounts.push(account); // Insert
-    }
-    localStorage.setItem(DB_KEYS.ACCOUNTS, JSON.stringify(accounts));
-  }
-
-  deleteAccount(id: string) {
-    const accounts = this.getAllAccounts().filter(a => a.id !== id);
-    localStorage.setItem(DB_KEYS.ACCOUNTS, JSON.stringify(accounts));
   }
 }
 

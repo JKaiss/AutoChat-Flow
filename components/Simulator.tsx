@@ -1,9 +1,11 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { engine } from '../services/engine';
 import { ChatMessage, TriggerType, Account, Platform } from '../types';
-import { db } from '../services/db';
 import { Send, Instagram, Phone, Facebook, WifiOff, MessageSquare, AtSign, MessageCircle, User, RefreshCw, Activity, Zap, CheckCircle2 } from 'lucide-react';
+// FIX: Import axios to fetch accounts from the API.
+import axios from 'axios';
 
 export const Simulator: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -26,8 +28,16 @@ export const Simulator: React.FC = () => {
         engine.startPolling();
     }
 
-    const allAccounts = db.getAllAccounts();
-    setAccounts(allAccounts);
+    // FIX: Replaced non-existent db.getAllAccounts() with an API call.
+    const fetchAccounts = async () => {
+      try {
+        const res = await axios.get('/api/accounts');
+        setAccounts(res.data);
+      } catch (e) {
+        console.error("Simulator: Failed to fetch accounts", e);
+      }
+    };
+    fetchAccounts();
     
     // Subscribe to engine messages
     const handleMsg = (msg: ChatMessage) => {

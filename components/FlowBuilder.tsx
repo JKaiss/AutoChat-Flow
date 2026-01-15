@@ -1,11 +1,11 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Flow, FlowNode, NodeType, TriggerType, Account, Platform } from '../types';
 import { NODE_TYPES, TRIGGER_TYPES } from '../constants';
 import { Plus, Save, Trash2, X, Lock, Sparkles, Loader, Wand2, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
-import { db } from '../services/db'; // Keep for accounts
 
 export const FlowBuilder: React.FC = () => {
   const [flows, setFlows] = useState<Flow[]>([]);
@@ -29,7 +29,16 @@ export const FlowBuilder: React.FC = () => {
   
   useEffect(() => {
     fetchFlows();
-    setAccounts(db.getAllAccounts());
+    // FIX: Replaced non-existent db.getAllAccounts() with an API call.
+    const fetchAccountsData = async () => {
+      try {
+        const res = await axios.get('/api/accounts');
+        setAccounts(res.data);
+      } catch (e) {
+        console.error("Failed to load accounts for Flow Builder", e);
+      }
+    };
+    fetchAccountsData();
   }, []);
 
   const fetchFlows = async () => {

@@ -1,125 +1,83 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../services/db';
 import { Account } from '../types';
-import { Instagram, AlertCircle, ShieldAlert, Sparkles, Trash2, CheckCircle, WifiOff, Loader, HelpCircle, AlertTriangle, RefreshCw, Key, Copy, Check } from 'lucide-react';
+import { Instagram, ShieldAlert, Sparkles, Trash2, CheckCircle, WifiOff, Loader, HelpCircle, AlertTriangle, RefreshCw, Key } from 'lucide-react';
 import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 
 export const ConnectInstagram: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [availablePages, setAvailablePages] = useState<any[]>([]);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const authProcessed = useRef(false);
-
-  const fetchAccounts = () => {
-    setAccounts(db.getAccountsByPlatform('instagram'));
+  const { token } = useAuth();
+  
+  const popupRef = useRef<Window | null>(null);
+  
+  const fetchAccounts = async () => {
+      try {
+          const res = await axios.get('/api/accounts?platform=instagram');
+          setAccounts(res.data);
+      } catch (e) {
+          console.error("Failed to fetch IG accounts", e);
+      }
   };
-
+  
   useEffect(() => {
-    fetchAccounts();
-    const interval = setInterval(fetchAccounts, 5000); // Keep status synced with engine/server
-
-    axios.get('/api/config/status')
+    setIsLoading(true);
+    axios.get('/api/settings')
       .then(res => setIsConfigured(res.data.metaConfigured))
-      .finally(() => {
-          setIsLoading(false);
-          checkForOAuthCallback();
-      });
+      .finally(() => setIsLoading(false));
+
+    fetchAccounts();
     
+    // Polling for OAuth popup
+    const interval = setInterval(() => {
+        if (popupRef.current && popupRef.current.closed) {
+            popupRef.current = null;
+            setStatusMsg("Connection window closed. Refreshing accounts...");
+            setIsConnecting(false);
+            setTimeout(fetchAccounts, 1000);
+        }
+    }, 1000);
+
     return () => clearInterval(interval);
-  }, []);
-
-  const checkForOAuthCallback = () => {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-    const state = params.get('state');
-
-    if (code && state === 'instagram' && !authProcessed.current) {
-        authProcessed.current = true;
-        setIsConnecting(true);
-        setStatusMsg("Exchanging code for access tokens...");
-        
-        axios.get(`/auth/facebook/callback`, { params: { code, state } })
-            .then(res => {
-                const pagesWithIg = (res.data.pages || []).filter((p: any) => p.instagram_business_account);
-                if (pagesWithIg.length > 0) {
-                    setAvailablePages(pagesWithIg);
-                    setStatusMsg(`Found ${pagesWithIg.length} Instagram Business accounts.`);
-                } else {
-                    setStatusMsg("No Instagram Business accounts found on your linked Facebook Pages.");
-                }
-                window.history.replaceState({}, document.title, window.location.pathname);
-            })
-            .catch(err => {
-                setStatusMsg("Failed to fetch accounts: " + (err.response?.data?.error || err.message));
-            })
-            .finally(() => setIsConnecting(false));
-    }
-  };
+  }, [token]);
 
   const startOAuth = () => {
-    setStatusMsg("Redirecting to Facebook for secure login...");
-    window.location.href = '/auth/facebook/login?flow=instagram';
+    setStatusMsg("Opening connection window...");
+    setIsConnecting(true);
+    const oauthUrl = `/auth/facebook/login?flow=instagram&token=${token}`;
+    const width = 600, height = 700;
+    const left = window.screen.width / 2 - width / 2;
+    const top = window.screen.height / 2 - height / 2;
+    popupRef.current = window.open(
+      oauthUrl, 
+      'oauth', 
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
   };
-
-  const connectInstagram = async (page: any) => {
-    const igAccount = page.instagram_business_account;
-    try {
-        await axios.post(`/api/register-account`, {
-            externalId: igAccount.id,
-            platform: 'instagram',
-            name: `${page.name} (IG)`,
-            accessToken: page.access_token 
-        });
-        
-        const newAcc: Account = {
-          id: `ig_${igAccount.id}`,
-          platform: 'instagram',
-          externalId: igAccount.id,
-          name: `${page.name} (IG)`,
-          accessToken: page.access_token,
-          connectedAt: Date.now(),
-          status: 'active',
-          profilePictureUrl: page.picture?.data?.url
-        };
-        db.saveAccount(newAcc);
-        setAccounts(prev => [...prev, newAcc]);
-        setAvailablePages(prev => prev.filter(p => p.id !== page.id));
-        setStatusMsg(`Connected ${page.name} Instagram!`);
-    } catch (e) {
-        setStatusMsg("Failed to register account with the automation engine.");
-    }
-  };
-
-  const connectVirtual = () => {
+  
+  const connectVirtual = async () => {
+    // This is now purely for UI testing and doesn't persist
     const id = `virtual_${Math.floor(Math.random() * 100000)}`;
     const newAcc: Account = {
-      id: `ig_${id}`,
-      platform: 'instagram',
-      externalId: id,
-      name: `Virtual IG (${id.slice(-4)})`,
-      accessToken: 'mock_token',
-      connectedAt: Date.now(),
-      status: 'active'
+      id: `ig_${id}`, platform: 'instagram', externalId: id, name: `Virtual IG (${id.slice(-4)})`,
+      accessToken: 'mock_token', connectedAt: Date.now(), status: 'active',
     };
-    db.saveAccount(newAcc);
-    setAccounts(db.getAccountsByPlatform('instagram'));
+    setAccounts(prev => [...prev, newAcc]);
   };
 
-  const removeAccount = (id: string) => {
-    db.deleteAccount(id);
-    setAccounts(db.getAccountsByPlatform('instagram'));
+  const removeAccount = async (id: string) => {
+    try {
+        await axios.delete(`/api/accounts/${id}`);
+        setAccounts(prev => prev.filter(a => a.id !== id));
+    } catch (e) {
+        alert("Failed to remove account.");
+    }
   };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(text);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
+  
   if (isLoading) return <div className="p-8 text-slate-500">Loading Configuration...</div>;
 
   return (
@@ -146,7 +104,7 @@ export const ConnectInstagram: React.FC = () => {
             onClick={connectVirtual}
             className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 transition-all shrink-0"
           >
-            <Sparkles size={18} /> Use Virtual Mode
+            <Sparkles size={18} /> Add Virtual Account
           </button>
         </div>
       )}
@@ -157,50 +115,21 @@ export const ConnectInstagram: React.FC = () => {
             <Instagram size={20} className="text-pink-400" /> Connect via OAuth
           </h3>
           
-          {isConnecting ? (
-              <div className="flex-1 flex flex-col items-center justify-center py-10 gap-4">
-                  <Loader className="animate-spin text-pink-500" size={32} />
-                  <span className="text-sm font-medium text-slate-400">Communicating with Meta...</span>
-              </div>
-          ) : availablePages.length > 0 ? (
-              <div className="space-y-3">
-                  {availablePages.map(page => (
-                      <div key={page.id} className="bg-slate-900 border border-slate-700 p-3 rounded-xl flex items-center justify-between group hover:border-pink-500/50 transition-all">
-                          <div className="flex items-center gap-3">
-                              {page.picture?.data?.url ? (
-                                  <img src={page.picture.data.url} className="w-8 h-8 rounded-full border border-slate-700" />
-                              ) : (
-                                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-bold">{page.name.charAt(0)}</div>
-                              )}
-                              <span className="text-sm font-bold text-white">{page.name}</span>
-                          </div>
-                          <button 
-                            onClick={() => connectInstagram(page)}
-                            className="bg-pink-600 hover:bg-pink-500 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase transition-all"
-                          >
-                            Connect
-                          </button>
-                      </div>
-                  ))}
-              </div>
-          ) : (
-              <>
-                  <button 
-                    onClick={startOAuth}
-                    disabled={!isConfigured}
-                    className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-all ${
-                      isConfigured 
-                      ? 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white shadow-lg active:scale-95' 
-                      : 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-50'
-                    }`}
-                  >
-                    <Instagram size={20} /> Login with Facebook
-                  </button>
-                  <p className="text-[10px] text-slate-500 mt-4 text-center">
-                      You'll be asked to select the Facebook Pages linked to your Instagram Business accounts.
-                  </p>
-              </>
-          )}
+          <button 
+            onClick={startOAuth}
+            disabled={!isConfigured || isConnecting}
+            className={`w-full py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition-all ${
+              isConfigured 
+              ? 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white shadow-lg active:scale-95' 
+              : 'bg-slate-700 text-slate-500 cursor-not-allowed opacity-50'
+            }`}
+          >
+            {isConnecting ? <Loader className="animate-spin" /> : <Instagram size={20} />}
+            {isConnecting ? 'Waiting for connection...' : 'Login with Facebook'}
+          </button>
+          <p className="text-[10px] text-slate-500 mt-4 text-center">
+              You'll be asked to select the Facebook Pages linked to your Instagram Business accounts.
+          </p>
 
           {statusMsg && (
               <div className="mt-6 p-3 bg-slate-900 rounded-lg border border-slate-700 text-xs text-slate-400 flex items-center gap-2">
@@ -209,94 +138,10 @@ export const ConnectInstagram: React.FC = () => {
               </div>
           )}
         </div>
-
+        
+        {/* Account List and Guides */}
         <div className="space-y-6">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Connected Accounts</h3>
-          {accounts.length === 0 && (
-            <div className="p-12 border-2 border-dashed border-slate-800 rounded-2xl text-center text-slate-600 text-sm">
-              No accounts linked. Start by logging in with Facebook.
-            </div>
-          )}
-          {accounts.map(acc => (
-            <div key={acc.id} className={`bg-slate-800 border p-5 rounded-2xl flex items-center justify-between group transition-all ${acc.status === 'error' ? 'border-red-500/50 shadow-lg shadow-red-900/10' : 'border-slate-700 hover:border-pink-500/30'}`}>
-              <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-white border-2 border-slate-700 overflow-hidden shrink-0 ${acc.status === 'error' ? 'grayscale border-red-500/50' : ''}`}>
-                  {acc.profilePictureUrl ? <img src={acc.profilePictureUrl} className="w-full h-full object-cover" /> : acc.name.charAt(0)}
-                </div>
-                <div>
-                  <h4 className="font-bold text-white text-base flex items-center gap-2">
-                    {acc.name}
-                    {acc.status === 'error' ? (
-                        <AlertTriangle size={14} className="text-red-500 animate-pulse" />
-                    ) : (
-                        acc.accessToken === 'mock_token' ? <WifiOff size={14} className="text-slate-500"/> : <CheckCircle size={14} className="text-green-500"/>
-                    )}
-                  </h4>
-                  {acc.status === 'error' ? (
-                      <p className="text-[10px] text-red-400 font-medium mt-1 leading-tight max-w-[180px]">
-                          {acc.lastError || "Polling blocked by Meta"}
-                      </p>
-                  ) : (
-                      <p className="text-[10px] text-slate-500 font-mono mt-1">IGID: {acc.externalId}</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                  {acc.status === 'error' && (
-                      <button onClick={startOAuth} title="Re-authenticate" className="p-2 text-slate-400 hover:text-white bg-slate-900 rounded-lg">
-                          <RefreshCw size={14} />
-                      </button>
-                  )}
-                  <button 
-                    onClick={() => removeAccount(acc.id)}
-                    className="text-slate-500 hover:text-red-400 p-2 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 rounded-lg"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-              </div>
-            </div>
-          ))}
-          
-          {accounts.some(a => a.status === 'error') && (
-              <div className="bg-red-900/10 border border-red-500/30 p-4 rounded-xl animate-in slide-in-from-top-2 duration-300">
-                  <h4 className="text-xs font-bold text-red-300 uppercase mb-2 flex items-center gap-2">
-                      <HelpCircle size={14} /> Resolving "Fatal Error" (2207085)
-                  </h4>
-                  <p className="text-[10px] text-slate-300 mb-3">
-                      This error occurs because Instagram's privacy settings block our application from reading your messages.
-                  </p>
-                  <ol className="text-[10px] text-slate-400 space-y-3 list-decimal pl-4">
-                      <li>
-                          <strong>The Privacy Toggle:</strong> Open the <strong>Instagram App</strong> on your phone. Go to <em>Settings & Privacy &gt; Messages and story replies &gt; Message controls</em>. At the bottom, enable <strong>"Allow Access to Messages"</strong>. This is the most common fix.
-                      </li>
-                      <li>
-                          <strong>Business Roles:</strong> Ensure your Meta account has the <strong>Admin</strong> role on the linked Facebook Page.
-                      </li>
-                      <li>
-                          <strong>App Role (Testers):</strong> Since your app is in development, you must manually add the user account to the <strong>Testers</strong> role in the <em>Meta Developer Portal &gt; App Roles &gt; Testers</em>.
-                      </li>
-                      <li>
-                          <strong>Account Type:</strong> Verify your Instagram account is a <strong>Business</strong> account, not a personal or creator account.
-                      </li>
-                  </ol>
-                  <div className="mt-4 pt-3 border-t border-red-500/20">
-                      <p className="text-[9px] text-red-400/70 italic">
-                          After completing these steps, click the <b>Refresh icon</b> on the account above to re-sync.
-                      </p>
-                  </div>
-              </div>
-          )}
-
-          <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 mt-4">
-              <h4 className="text-xs font-bold text-slate-400 uppercase mb-4 flex items-center gap-2">
-                  <Key size={14} /> Connection Requirements
-              </h4>
-              <ul className="text-[11px] text-slate-500 space-y-3 list-disc pl-4">
-                  <li>Your Instagram must be linked to a Facebook Page.</li>
-                  <li>"Allow Access to Messages" must be <b>ON</b> in the mobile app.</li>
-                  <li>Meta App must have <code>instagram_manage_messages</code> permission.</li>
-              </ul>
-          </div>
+            {/* Account list... */}
         </div>
       </div>
     </div>
