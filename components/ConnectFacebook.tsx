@@ -94,10 +94,10 @@ export const ConnectFacebook: React.FC = () => {
           return;
       }
       try {
-          await axios.post(`/api/messenger/send`, {
+          await axios.post(`/api/facebook/send`, {
               to: testRecipient,
               text: testMessage || "Hello from AutoChat Flow!",
-              pageId: page.externalId
+              accountId: page.externalId
           });
           setStatusMsg("Message sent successfully!");
       } catch (e: any) {

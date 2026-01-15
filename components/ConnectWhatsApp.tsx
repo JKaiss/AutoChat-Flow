@@ -31,8 +31,14 @@ export const ConnectWhatsApp: React.FC = () => {
     if (!form.phoneNumberId || !form.accessToken) return;
 
     try {
-        // FIXED: Use relative path
-        await axios.post('/api/whatsapp/connect', form);
+        const payload = {
+            externalId: form.phoneNumberId,
+            platform: 'whatsapp',
+            name: `WhatsApp ${form.phoneNumberId.slice(-4)}`,
+            accessToken: form.accessToken,
+            businessAccountId: form.businessAccountId,
+        };
+        await axios.post('/api/register-account', payload);
         
         const newAccount: Account = {
             id: `wa_${form.phoneNumberId}`,
@@ -61,7 +67,6 @@ export const ConnectWhatsApp: React.FC = () => {
     if (!testNumber) return;
     setTestStatus('sending');
     try {
-        // FIXED: Use relative path
         await axios.post('/api/whatsapp/send', {
             to: testNumber,
             text: "Hello from AutoChat Flow! 🚀 This is a test message.",

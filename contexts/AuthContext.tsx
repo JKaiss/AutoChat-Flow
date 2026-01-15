@@ -25,7 +25,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      engine.setToken(token); // Update engine with new token
+      engine.setToken(token);
       refreshUsage();
     } else {
       engine.setToken(null);
@@ -34,6 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [token]);
 
   const refreshUsage = async () => {
+    setIsLoading(true);
     try {
       const res = await axios.get(`${API_URL}/auth/me`);
       setUser(res.data.user);
@@ -43,7 +44,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           logout();
       } else {
           console.warn("Backend Unreachable or Error, entering Offline Mode for UI");
-          if (!user && token) {
+          // Only set offline user if one was previously logged in
+          if (token) {
              setUser({ id: 'offline_user', email: 'offline@user.com', plan: 'free', createdAt: Date.now() });
           }
       }
@@ -54,16 +56,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, pass: string) => {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password: pass });
-    setToken(res.data.token);
-    setUser(res.data.user);
     localStorage.setItem('token', res.data.token);
+    setToken(res.data.token);
+    setUser(res.data.user); // The token useEffect will handle the rest
   };
 
   const register = async (email: string, pass: string) => {
     const res = await axios.post(`${API_URL}/auth/register`, { email, password: pass });
+    localStorage.setItem('token', res.data.token);
     setToken(res.data.token);
     setUser(res.data.user);
-    localStorage.setItem('token', res.data.token);
   };
 
   const logout = () => {

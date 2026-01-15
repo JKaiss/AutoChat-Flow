@@ -3,6 +3,8 @@ import { db } from '../services/db';
 import { Flow, Subscriber } from '../types';
 import { Users, Zap, MessageCircle, BarChart3 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+// FIX: Import axios to fetch data from the API.
+import axios from 'axios';
 
 export const Dashboard: React.FC = () => {
   const [stats, setStats] = useState({
@@ -14,15 +16,28 @@ export const Dashboard: React.FC = () => {
   const [chartData, setChartData] = useState<any[]>([]);
 
   useEffect(() => {
-    const flows = db.getFlows();
+    // FIX: Replaced non-existent db.getFlows() with an API call to the backend to get real flow data.
     const subs = db.getSubscribers();
     const logs = db.getLogs();
 
-    setStats({
-      flowsCount: flows.length,
-      subscribersCount: subs.length,
-      interactions: logs.length
-    });
+    axios.get('/api/flows')
+      .then(res => {
+        const flows: Flow[] = res.data || [];
+        setStats({
+          flowsCount: flows.length,
+          subscribersCount: subs.length,
+          interactions: logs.length
+        });
+      })
+      .catch(err => {
+        console.error("Dashboard: Failed to fetch flows", err);
+        setStats({
+          flowsCount: 0, // Fallback
+          subscribersCount: subs.length,
+          interactions: logs.length
+        });
+      });
+
 
     // Mock chart data based on logs or random for MVP visuals
     const data = [

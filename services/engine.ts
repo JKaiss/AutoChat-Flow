@@ -1,4 +1,5 @@
 
+
 import { db } from "./db";
 import { Flow, Subscriber, FlowNode, ChatMessage, TriggerType, Platform } from "../types";
 import { GoogleGenAI } from "@google/genai";
@@ -9,6 +10,8 @@ export class AutomationEngine {
   private pausedStates = new Map<string, { flowId: string, nextNodeId: string, variable: string }>();
   private processedIds = new Set<string>();
   private authToken: string | null = null;
+  // FIX: Added a cache for flows to be fetched from the API instead of mock db.
+  private flows: Flow[] = [];
   public isPolling = false;
   private intervalId: any = null;
 
@@ -18,11 +21,45 @@ export class AutomationEngine {
     }
   }
 
+  // FIX: Updated setToken to fetch flows when a user logs in and clear cache on logout.
   setToken(token: string | null) {
       this.authToken = token;
-      if (token && this.isPolling) {
-          this.pollMessages();
+      if (token) {
+          this.refreshFlows();
+          if (this.isPolling) {
+              this.pollMessages();
+          }
+      } else {
+          this.flows = []; // Clear cache on logout
       }
+  }
+
+  // FIX: Added a method to fetch all flows and their details from the API.
+  public async refreshFlows() {
+    if (!this.authToken) return;
+    try {
+      const res = await axios.get('/api/flows');
+      const flowSummaries: Partial<Flow>[] = res.data || [];
+      
+      const fullFlows = await Promise.all(
+        flowSummaries.map(async (summary) => {
+          if (!summary.id) return null;
+          try {
+            const flowRes = await axios.get(`/api/flows/${summary.id}`);
+            return flowRes.data;
+          } catch (e) {
+            console.error(`[Engine] Failed to fetch full data for flow ${summary.id}`, e);
+            return null;
+          }
+        })
+      );
+      
+      this.flows = fullFlows.filter((f): f is Flow => f !== null);
+      console.log(`[Engine] Cached ${this.flows.length} flows.`);
+    } catch (e) {
+      console.error("[Engine] Failed to fetch flow list", e);
+      this.flows = [];
+    }
   }
 
   addListener(fn: (msg: ChatMessage) => void) { this.listeners.push(fn); }
@@ -130,11 +167,13 @@ export class AutomationEngine {
         subscriber.data[pausedState.variable] = rawPayload.text;
         db.saveSubscriber(subscriber);
         this.pausedStates.delete(subscriber.id);
-        const flow = db.getFlow(pausedState.flowId);
+        // FIX: Replaced non-existent db.getFlow with a lookup in the in-memory flow cache.
+        const flow = this.flows.find(f => f.id === pausedState.flowId);
         if (flow) return this.executeFlow(flow, subscriber, rawPayload.targetAccountId, pausedState.nextNodeId, rawPayload.text);
     }
 
-    const matchedFlow = db.getFlows().find(f => {
+    // FIX: Replaced non-existent db.getFlows with the in-memory flow cache.
+    const matchedFlow = this.flows.find(f => {
         if (!f.active || (f.triggerType !== type && f.triggerType !== 'keyword')) return false;
         if (f.triggerAccountId && f.triggerAccountId !== rawPayload.targetAccountId && rawPayload.targetAccountId !== 'virtual_test_account') return false;
         if ((f.triggerType === 'keyword' || f.triggerKeyword) && rawPayload.text) {
