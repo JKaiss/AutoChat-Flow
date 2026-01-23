@@ -99,9 +99,83 @@ const getRedirectUri = (req, settings, path) => {
 };
 
 
-// --- AUTH ROUTES (UNCHANGED CORE, BUT DB-DRIVEN) ---
-app.post('/api/auth/register', async (req, res) => { /* ... unchanged from previous step ... */ });
-app.post('/api/auth/login', async (req, res) => { /* ... unchanged from previous step ... */ });
+// --- AUTH ROUTES (IMPLEMENTED) ---
+app.post('/api/auth/register', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const existingUser = await client.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (existingUser.rows.length > 0) {
+            return res.status(409).json({ error: 'User with this email already exists' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+
+        const orgName = email.split('@')[0] + "'s Organization";
+        const orgResult = await client.query('INSERT INTO organizations (name) VALUES ($1) RETURNING id', [orgName]);
+        const organizationId = orgResult.rows[0].id;
+
+        const userResult = await client.query('INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email', [email, passwordHash]);
+        const newUser = userResult.rows[0];
+
+        await client.query('INSERT INTO organization_members (user_id, organization_id, role) VALUES ($1, $2, $3)', [newUser.id, organizationId, 'owner']);
+        await client.query('INSERT INTO subscriptions (organization_id, plan, usage_limit) VALUES ($1, $2, $3)', [organizationId, 'free', CONFIG.PLANS.free.limit]);
+
+        const token = jwt.sign({ userId: newUser.id, organizationId }, CONFIG.JWT_SECRET, { expiresIn: CONFIG.JWT_EXPIRES_IN });
+
+        await client.query('COMMIT');
+        res.status(201).json({ token, user: { ...newUser, plan: 'free' } });
+    } catch (e) {
+        await client.query('ROLLBACK');
+        console.error('Registration error:', e);
+        res.status(500).json({ error: 'Registration failed' });
+    } finally {
+        client.release();
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required' });
+    }
+    try {
+        const userResult = await pool.query('SELECT id, email, password_hash FROM users WHERE email = $1', [email]);
+        if (userResult.rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        const user = userResult.rows[0];
+
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        const memberResult = await pool.query('SELECT organization_id FROM organization_members WHERE user_id = $1', [user.id]);
+        if (memberResult.rows.length === 0) {
+            return res.status(500).json({ error: 'User is not associated with an organization' });
+        }
+        const organizationId = memberResult.rows[0].organization_id;
+        
+        const subResult = await pool.query('SELECT plan FROM subscriptions WHERE organization_id = $1', [organizationId]);
+        const plan = subResult.rows[0]?.plan || 'free';
+
+        const token = jwt.sign({ userId: user.id, organizationId }, CONFIG.JWT_SECRET, { expiresIn: CONFIG.JWT_EXPIRES_IN });
+        
+        res.json({ token, user: { id: user.id, email: user.email, plan } });
+    } catch (e) {
+        console.error('Login error:', e);
+        res.status(500).json({ error: 'Login failed' });
+    }
+});
+
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
     const { userId, organizationId } = req.auth;
     try {
