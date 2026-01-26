@@ -31,6 +31,11 @@ for (const varName of requiredEnv) {
     }
 }
 
+if (!isConfigured) {
+    console.error("❌ Exiting process due to missing critical configuration.");
+    process.exit(1);
+}
+
 const CONFIG = {
     PORT: process.env.PORT || 3000,
     JWT_SECRET: process.env.JWT_SECRET,
@@ -51,13 +56,9 @@ const pool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
 });
 
-if (isConfigured) {
-    pool.query('SELECT NOW()').then(res => console.log('🐘 PostgreSQL connected:', res.rows[0].now)).catch(err => {
-        console.error('❌ Database connection error. The application will not function correctly.', err.stack);
-    });
-} else {
-    console.error('❌ Skipping database connection check due to missing environment variables.');
-}
+pool.query('SELECT NOW()').then(res => console.log('🐘 PostgreSQL connected:', res.rows[0].now)).catch(err => {
+    console.error('❌ Database connection error. The application will not function correctly.', err.stack);
+});
 
 
 // --- MIDDLEWARE ---
