@@ -53,6 +53,8 @@ const main = async () => {
     // --- DATABASE CONNECTION ---
     const pool = new pg.Pool({
         connectionString: process.env.DATABASE_URL,
+        connectionTimeoutMillis: 20000, // Terminate connection after 20s
+        idleTimeoutMillis: 30000,       // Close idle clients after 30s
     });
 
     try {
@@ -63,6 +65,7 @@ const main = async () => {
         console.log('🐘 PostgreSQL connected successfully.');
     } catch (err) {
         console.error('❌ FATAL: Could not connect to the database. Please check DATABASE_URL and network access.', err);
+        console.error('HINT: Ensure the Cloud Run service has the "Cloud SQL Client" IAM role and the Cloud SQL instance is running and accessible.');
         process.exit(1);
     }
 
