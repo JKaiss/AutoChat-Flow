@@ -50,26 +50,29 @@ const CONFIG = {
 };
 
 const main = async () => {
-    // --- DATABASE CONNECTION ---
+    // --- DATABASE CONNECTION (LAZY INITIALIZATION) ---
+    // The pool will connect automatically on the first query.
+    // This prevents a slow DB connection from blocking server startup.
     const pool = new pg.Pool({
         connectionString: process.env.DATABASE_URL,
-        connectionTimeoutMillis: 20000, // Terminate connection after 20s
+        connectionTimeoutMillis: 20000, // Terminate connection attempt after 20s
         idleTimeoutMillis: 30000,       // Close idle clients after 30s
     });
-
-    try {
-        const client = await pool.connect();
-        console.log('🐘 Attempting to connect to PostgreSQL...');
-        await client.query('SELECT NOW()');
-        client.release();
-        console.log('🐘 PostgreSQL connected successfully.');
-    } catch (err) {
-        console.error('❌ FATAL: Could not connect to the database. Please check DATABASE_URL and network access.', err);
-        console.error('HINT: Ensure the Cloud Run service has the "Cloud SQL Client" IAM role and the Cloud SQL instance is running and accessible.');
-        process.exit(1);
-    }
+    
+    pool.on('error', (err, client) => {
+        console.error('❌ Unexpected error on idle PostgreSQL client', err);
+    });
+    
+    console.log('🐘 PostgreSQL pool configured. Connection will be established on first query.');
 
     const app = express();
+    
+    // --- HEALTH CHECK ENDPOINT ---
+    // A simple endpoint for Cloud Run to verify the server is listening.
+    app.get('/healthz', (req, res) => {
+        res.status(200).send('OK');
+    });
+
 
     // --- MIDDLEWARE ---
     app.set('trust proxy', true);
@@ -505,8 +508,9 @@ app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => {
         });
     }
 
-    app.listen(CONFIG.PORT, () => {
-        console.log(`🚀 Server ready on port ${CONFIG.PORT}`);
+    // Explicitly listen on 0.0.0.0, which is required for containerized environments
+    app.listen(CONFIG.PORT, '0.0.0.0', () => {
+        console.log(`🚀 Server listening on 0.0.0.0:${CONFIG.PORT}`);
     });
 };
 
