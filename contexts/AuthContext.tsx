@@ -18,20 +18,26 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [token, setToken] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageStats>(DEFAULT_USAGE);
   const [isLoading, setIsLoading] = useState(true);
 
+  // This useEffect is ONLY for initial page load/rehydration from localStorage.
+  // It runs once when the component mounts.
   useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      engine.setToken(token);
-      refreshUsage();
-    } else {
-      engine.setToken(null);
-      setIsLoading(false);
-    }
-  }, [token]);
+    const rehydrateSession = async () => {
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) {
+        setToken(storedToken);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+        engine.setToken(storedToken);
+        await refreshUsage(); // This fetches user and usage, and handles loading states
+      } else {
+        setIsLoading(false);
+      }
+    };
+    rehydrateSession();
+  }, []); // Empty dependency array ensures this runs only once on mount.
 
   const refreshUsage = async () => {
     setIsLoading(true);
@@ -41,11 +47,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUsage(res.data.usage);
     } catch (e: any) {
       if (e.response && e.response.status === 401) {
+          // Token is invalid, so clear session.
           logout();
       } else {
           console.warn("Backend Unreachable or Error, entering Offline Mode for UI");
-          // Only set offline user if one was previously logged in
-          if (token) {
+          // Fallback to offline mode only if a token was present
+          if (localStorage.getItem('token')) {
              setUser({ id: 'offline_user', email: 'offline@user.com', plan: 'free', createdAt: Date.now() });
           }
       }
@@ -56,21 +63,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, pass: string) => {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password: pass });
-    localStorage.setItem('token', res.data.token);
-    setToken(res.data.token);
-    setUser(res.data.user); // The token useEffect will handle the rest
+    const { token: newToken, user: newUser } = res.data;
+    
+    // Set everything up explicitly to establish the session
+    localStorage.setItem('token', newToken);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    engine.setToken(newToken);
+    
+    // Set state to immediately re-render the app in a logged-in state
+    setToken(newToken);
+    setUser(newUser);
+    
+    // Fetch the latest usage stats after logging in
+    await refreshUsage();
   };
 
   const register = async (email: string, pass: string) => {
     const res = await axios.post(`${API_URL}/auth/register`, { email, password: pass });
-    localStorage.setItem('token', res.data.token);
-    setToken(res.data.token);
-    setUser(res.data.user);
+    const { token: newToken, user: newUser } = res.data;
+    
+    // Set everything up explicitly
+    localStorage.setItem('token', newToken);
+    axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    engine.setToken(newToken);
+
+    setToken(newToken);
+    setUser(newUser);
+
+    await refreshUsage();
   };
 
   const logout = () => {
     setToken(null);
     setUser(null);
+    setUsage(DEFAULT_USAGE); // Reset usage state
     localStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
     engine.setToken(null);
