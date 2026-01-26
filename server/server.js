@@ -119,8 +119,9 @@ const main = async () => {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        const client = await pool.connect();
+        let client;
         try {
+            client = await pool.connect();
             await client.query('BEGIN');
             const existingUser = await client.query('SELECT id FROM users WHERE email = $1', [email]);
             if (existingUser.rows.length > 0) return res.status(409).json({ error: 'User with this email already exists' });
@@ -142,11 +143,11 @@ const main = async () => {
             await client.query('COMMIT');
             res.status(201).json({ token, user: { ...newUser, plan: 'free' } });
         } catch (e) {
-            await client.query('ROLLBACK');
+            if (client) await client.query('ROLLBACK').catch(rbErr => console.error("Rollback failed", rbErr));
             console.error('Registration error:', e);
             res.status(500).json({ error: 'Registration failed' });
         } finally {
-            client.release();
+            if (client) client.release();
         }
     });
 
@@ -304,8 +305,9 @@ app.post('/api/flows', authMiddleware, async (req, res) => {
     const { organizationId } = req.auth;
     const { name, triggerType, triggerKeyword, triggerAccountId, nodes = [] } = req.body;
     
-    const client = await pool.connect();
+    let client;
     try {
+        client = await pool.connect();
         await client.query('BEGIN');
         const flowResult = await client.query(
             `INSERT INTO flows (organization_id, name, trigger_type, trigger_keyword, trigger_account_id, active)
@@ -338,11 +340,11 @@ app.post('/api/flows', authMiddleware, async (req, res) => {
         await client.query('COMMIT');
         res.status(201).json({ ...newFlow, nodes });
     } catch (e) {
-        await client.query('ROLLBACK');
+        if (client) await client.query('ROLLBACK').catch(rbErr => console.error("Rollback failed", rbErr));
         console.error('Failed to create flow', e);
         res.status(500).json({ error: 'Failed to create flow' });
     } finally {
-        client.release();
+        if (client) client.release();
     }
 });
 
@@ -351,8 +353,9 @@ app.put('/api/flows/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
     const { name, triggerType, triggerKeyword, triggerAccountId, nodes = [], active } = req.body;
 
-    const client = await pool.connect();
+    let client;
     try {
+        client = await pool.connect();
         await client.query('BEGIN');
         const flowCheck = await client.query('SELECT id FROM flows WHERE id = $1 AND organization_id = $2', [id, organizationId]);
         if (flowCheck.rowCount === 0) {
@@ -391,12 +394,12 @@ app.put('/api/flows/:id', authMiddleware, async (req, res) => {
         await client.query('COMMIT');
         res.json({ message: 'Flow updated' });
     } catch (e) {
-        await client.query('ROLLBACK');
+        if (client) await client.query('ROLLBACK').catch(rbErr => console.error("Rollback failed", rbErr));
         console.error('Failed to update flow', e);
         if (e.message.includes('not found')) return res.status(404).json({ error: e.message });
         res.status(500).json({ error: 'Failed to update flow' });
     } finally {
-        client.release();
+        if (client) client.release();
     }
 });
 
