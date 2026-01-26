@@ -40,6 +40,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []); // Empty dependency array ensures this runs only once on mount.
 
   const refreshUsage = async () => {
+    // Ensure there's a token before trying to refresh.
+    if (!axios.defaults.headers.common['Authorization']) {
+        setIsLoading(false);
+        return;
+    }
     setIsLoading(true);
     try {
       const res = await axios.get(`${API_URL}/auth/me`);
@@ -63,33 +68,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, pass: string) => {
     const res = await axios.post(`${API_URL}/auth/login`, { email, password: pass });
-    const { token: newToken, user: newUser } = res.data;
+    const { token: newToken } = res.data;
     
-    // Set everything up explicitly to establish the session
+    // Set token everywhere to establish the session context
     localStorage.setItem('token', newToken);
     axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
     engine.setToken(newToken);
-    
-    // Set state to immediately re-render the app in a logged-in state
     setToken(newToken);
-    setUser(newUser);
     
-    // Fetch the latest usage stats after logging in
+    // Now, fetch the full user and usage profile as the single source of truth.
     await refreshUsage();
   };
 
   const register = async (email: string, pass: string) => {
     const res = await axios.post(`${API_URL}/auth/register`, { email, password: pass });
-    const { token: newToken, user: newUser } = res.data;
+    const { token: newToken } = res.data;
     
-    // Set everything up explicitly
+    // Set token everywhere to establish the session context
     localStorage.setItem('token', newToken);
     axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
     engine.setToken(newToken);
-
     setToken(newToken);
-    setUser(newUser);
 
+    // Fetch the full user and usage profile.
     await refreshUsage();
   };
 
