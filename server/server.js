@@ -571,10 +571,10 @@ app.post('/api/ai/generate-flow', authMiddleware, async (req, res) => {
 const distPath = path.resolve(__dirname, '../dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));
+    // For any request that doesn't match a static file or a previously defined API route,
+    // send the main index.html file. This is the standard way to handle SPAs.
     app.get('*', (req, res) => {
-        if (!req.path.startsWith('/api') && !req.path.startsWith('/auth')) {
-            res.sendFile(path.join(distPath, 'index.html'));
-        }
+        res.sendFile(path.join(distPath, 'index.html'));
     });
 }
 
