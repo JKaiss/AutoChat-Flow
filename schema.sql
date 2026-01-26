@@ -97,8 +97,8 @@ CREATE TABLE flow_nodes (
     node_type VARCHAR(50) NOT NULL,
     position JSONB NOT NULL,
     data JSONB NOT NULL,
-    next_id UUID,
-    false_next_id UUID,
+    next_id UUID REFERENCES flow_nodes(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
+    false_next_id UUID REFERENCES flow_nodes(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
